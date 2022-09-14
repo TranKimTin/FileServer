@@ -249,7 +249,7 @@ function createIndex(folderPath) {
     } catch (err) { }
 }
 
-app.listen(80, () => {
+app.listen(8080, () => {
     console.log(`\nStart server at: ${new Date()}
                 HTTP server is listening at: ${"localhost"}:${"80"}
     `);
