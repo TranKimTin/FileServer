@@ -11,37 +11,43 @@ const formidable = require('formidable');
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use(cors({ origin: true, credentials: true }));
-app.use(
-    morgan(
-        ":remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
-    )
-);
-// app.use(body_parser.json({ limit: "500mb" }));
-app.use(body_parser.urlencoded({ extended: false, limit: "50mb" }));
+//app.use(
+//    morgan(
+//        ":remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
+//    )
+//);
+app.use(body_parser.json({ limit: "500mb" }));
+app.use(body_parser.urlencoded({ extended: false, limit: "500mb" }));
 // app.use('/api/', routes);
 app.use("/", function (req, res, next) {
-    let { alert = null } = req.query;
-    if (alert) {
-        return res.send(`
-            <script> 
-                alert('${alert}');
-                window.location.href = '/';
-            </script >
-        `);
+    try{
+        let { alert = null } = req.query;
+        if (alert) {
+            return res.send(`
+                <script> 
+                    alert('${alert}');
+                    window.location.href = '/';
+                </script >
+            `);
+        }
+        else {
+            createIndex(__dirname + "/public", alert);
+            // res.redirect('/');
+            next();
+        }
     }
-    else {
-        createIndex("./public", alert);
-        // res.redirect('/');
+    catch(err){
+        console.log(err);
         next();
     }
 
-}, express.static("public"));
+}, express.static(__dirname + "/public"));
 
 app.get("/delete/:file", (req, res) => {
     try {
         let file = req.params.file;
         console.log(`/delete/${file}`);
-        fs.unlinkSync(`./public/${file}`);
+        fs.unlinkSync(__dirname + `/public/${file}`);
         res.redirect(`/`);
     } catch (err) {
         console.log(err);
@@ -62,7 +68,7 @@ app.post('/upload', (req, res) => {
                     return;
                 }
                 let oldpath = files.filetoupload.filepath;
-                let newpath = './public/' + files.filetoupload.originalFilename;
+                let newpath = __dirname + '/public/' + files.filetoupload.originalFilename;
                 console.log(`copy file ${oldpath} to ${newpath}`);
                 fs.copyFileSync(oldpath, newpath);
                 console.log(`delete file ${oldpath}`)
@@ -82,7 +88,7 @@ app.post('/upload', (req, res) => {
 });
 function createIndex(folderPath) {
     try {
-        console.log('createIndex')
+        console.log('createIndex ' + folderPath)
         let files = fs.readdirSync(folderPath);
         for (let file of files) {
             if (!file.includes(".") && file != "node_modules") {
@@ -246,11 +252,13 @@ function createIndex(folderPath) {
             </script>
             `;
         fs.writeFileSync(`${folderPath}/index.html`, html);
-    } catch (err) { }
+    } catch (err) {
+         console.log(err);
+     }
 }
 
 app.listen(8080, () => {
     console.log(`\nStart server at: ${new Date()}
-                HTTP server is listening at: ${"localhost"}:${"80"}
+                HTTP server is listening at: ${"localhost"}:${"8080"}
     `);
 });
