@@ -10,17 +10,25 @@ const formidable = require('formidable');
 
 app.disable("x-powered-by");
 app.set("trust proxy", true);
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 //app.use(
 //    morgan(
 //        ":remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
 //    )
 //);
-app.use(body_parser.json({ limit: "500mb" }));
-app.use(body_parser.urlencoded({ extended: false, limit: "500mb" }));
+app.use(body_parser.json({ limit: "50mb" }));
+app.use(body_parser.urlencoded({ extended: false, limit: "50mb" }));
 // app.use('/api/', routes);
-app.use("/", function (req, res, next) {
-    try{
+app.get("/", function (req, res, next) {
+    try {
+        if (!fs.existsSync(__dirname + "/public")) {
+            fs.mkdirSync(__dirname + "/public");
+        }
+
+        if (!fs.existsSync(__dirname + "/public/note.txt")) {
+            fs.writeFileSync(__dirname + "/public/note.txt", '');
+        }
+
         let { alert = null } = req.query;
         if (alert) {
             return res.send(`
@@ -36,7 +44,7 @@ app.use("/", function (req, res, next) {
             next();
         }
     }
-    catch(err){
+    catch (err) {
         console.log(err);
         next();
     }
@@ -86,20 +94,62 @@ app.post('/upload', (req, res) => {
         res.redirect(`/`);
     }
 });
-function createIndex(folderPath) {
+
+app.post("/note", (req, res) => {
     try {
-        console.log('createIndex ' + folderPath)
-        let files = fs.readdirSync(folderPath);
-        for (let file of files) {
-            if (!file.includes(".") && file != "node_modules") {
-                createIndex(`${folderPath}/${file}`);
+        console.log('write note ');
+        if (!req.body.data) return res.send('Lỗi');
+        let text = req.body.data || '';
+        console.log(text);
+        fs.writeFileSync(__dirname + "/public/note.txt", text);
+        res.send(`ok`);
+    } catch (err) {
+        console.log(err);
+        res.send(`Lỗi note`);
+    }
+});
+
+function getSortedFiles(dir) {
+    let files = fs.readdirSync(dir);
+    files = files.map(fileName => {
+        let f = fs.statSync(`${dir}/${fileName}`);
+        return {
+            name: fileName,
+            time: f.mtime.getTime(),
+            size: f.size
+        };
+    }).sort((a, b) => a.time - b.time);
+    for (let file of files) {
+        let unit = 'b';
+        if (file.size > 1024) {
+            file.size = (file.size / 1024).toFixed(1);
+            unit = 'Kb';
+            if (file.size > 1024) {
+                file.size = (file.size / 1024).toFixed(1);
+                unit = 'Mb';
+                if (file.size > 1024) {
+                    file.size = (file.size / 1024).toFixed(1);
+                    unit = 'Gb';
+                }
             }
         }
+        file.size = file.size + ' ' + unit;
+    }
+    files = files.filter(item => item.name != 'index.html' && item.name != 'note.txt');
+    return files;
+};
+
+function createIndex(folderPath) {
+    try {
+        let files = getSortedFiles(folderPath);
+        let note = fs.readFileSync(folderPath + '/note.txt').toString();
+
         let html = `
             <style>
                 body {
                     font-family: sans-serif;
                     background-color: #eeeeee;
+                    zoom: 1.5;
                 }
                 
                 .file-upload {
@@ -214,6 +264,20 @@ function createIndex(folderPath) {
                     transition: all .2s ease;
                 }
               
+                table, td, th {
+                    border: 1px solid black;
+                    padding: 10px;
+                    text-align: left;
+                }
+
+                table {
+                    border-collapse: collapse;
+                    max-width: 100%;
+                }
+                #note {
+                    width: 100%;
+                    height: 50vh;
+                }
             </style>
             <form action="upload" method="post" enctype="multipart/form-data">
                 <div class="image-upload-wrap">
@@ -231,17 +295,28 @@ function createIndex(folderPath) {
                 <input type="submit" style="margin: 5px;" value="upload">
             </form>
             </br>
-            <div>Total : ${files.filter((item) => item != "index.html").length} file</div>
+            <div>Total : ${files.length} file</div>
             <table>
+            <tr>
+                <th>Name</th>
+                <th>Size</th>
+                <th>Created date</th>
+                <th>Delete</th>
+            </tr>
             ${files
-                .filter((item) => item != "index.html")
-                .map((item) => `<tr>  
-                                    <td><a href='./${item}' download='${item}'>${item}</a></td>
-                                    <td><a href='/delete/${item}' style='color:red; margin-left: 50px;'>Xóa</a></td>
+                .map((item) => `<tr>
+                                    <td><a href='./${item.name}' download='${item.name}'>${item.name}</a></td>
+                                    <td>${item.size}</td>
+                                    <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
+                                    <td><a href='/delete/${item.name}' style='color:red; margin-left: 50px;'>Xóa</a></td>
                                 </tr> 
                     `)
                 .join("\n")}
             </table>
+
+            </br>
+            <div><a href='./note.txt' download='note.txt'>Note.txt</a></div>
+            <textarea id='note' onchange='onChangeNote(this.value)' onkeydown='onChangeNote(this.value)'>${note}</textarea>
             
             <script>
                 function onUpload(value){
@@ -249,15 +324,35 @@ function createIndex(folderPath) {
                     console.log(value);
                     document.getElementById("filename").innerText = value;
                 }
+                function onChangeNote(value){
+                    clearTimeout(this.timeout);
+                    this.timeout = setTimeout(()=>{
+                        console.log(value);
+                        let myHeaders = new Headers();
+                        myHeaders.append("Content-Type", "application/json");
+
+                        let raw = JSON.stringify({data: value});
+                        let requestOptions = {
+                            method: 'POST',
+                            headers: myHeaders,
+                            body: raw,
+                            redirect: 'follow'
+                        };
+                        fetch("/note", requestOptions)
+                        .then(response => response.text())
+                        .then(result => console.log(result))
+                        .catch(error => console.log('error', error));
+                    }, 1000);
+                }
             </script>
             `;
         fs.writeFileSync(`${folderPath}/index.html`, html);
     } catch (err) {
-         console.log(err);
-     }
+        console.log(err);
+    }
 }
 
-app.listen(8080, () => {
+app.listen(80, () => {
     console.log(`\nStart server at: ${new Date()}
                 HTTP server is listening at: ${"localhost"}:${"8080"}
     `);
