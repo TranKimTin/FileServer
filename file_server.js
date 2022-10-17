@@ -11,15 +11,15 @@ const formidable = require('formidable');
 app.disable("x-powered-by");
 app.set("trust proxy", true);
 app.use(cors());
-//app.use(
-//    morgan(
-//        ":remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
-//    )
-//);
+app.use(
+    morgan(
+        ":date[iso] :remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
+    )
+);
 app.use(body_parser.json({ limit: "50mb" }));
 app.use(body_parser.urlencoded({ extended: false, limit: "50mb" }));
 // app.use('/api/', routes);
-app.get("/", function (req, res, next) {
+app.use("/", function (req, res, next) {
     try {
         if (!fs.existsSync(__dirname + "/public")) {
             fs.mkdirSync(__dirname + "/public");
@@ -65,9 +65,10 @@ app.get("/delete/:file", (req, res) => {
 app.post('/upload', (req, res) => {
     try {
         console.log('/upload');
-        let form = new formidable.IncomingForm({ maxFileSize: 10 * 1024 * 1024 * 1024 });
+        let maxFileSize = 10 * 1024 * 1024 * 1024; //10GB
+        let form = new formidable.IncomingForm({ maxFileSize });
         form.multiples = true;
-        form.maxFileSize = 10 * 1024 * 1024 * 1024;
+        form.maxFileSize = maxFileSize;
         form.parse(req, function (err, fields, files) {
             try {
                 if (err) {
@@ -98,7 +99,6 @@ app.post('/upload', (req, res) => {
 app.post("/note", (req, res) => {
     try {
         console.log('write note ');
-        if (!req.body.data) return res.send('Lỗi');
         let text = req.body.data || '';
         console.log(text);
         fs.writeFileSync(__dirname + "/public/note.txt", text);
@@ -186,11 +186,6 @@ function createIndex(folderPath) {
                     transition: all .2s ease;
                 }
                 
-                .file-upload-content {
-                    display: none;
-                    text-align: center;
-                }
-                
                 .file-upload-input {
                     position: absolute;
                     margin: 0;
@@ -214,11 +209,6 @@ function createIndex(folderPath) {
                     border: 4px dashed #ffffff;
                 }
                 
-                .image-title-wrap {
-                    padding: 0 15px 15px 15px;
-                    color: #222;
-                }
-                
                 .drag-text {
                     text-align: center;
                 }
@@ -227,41 +217,7 @@ function createIndex(folderPath) {
                     font-weight: 100;
                     text-transform: uppercase;
                     color: #15824B;
-                    padding: 60px 0;
-                }
-                
-                .file-upload-image {
-                    max-height: 200px;
-                    max-width: 200px;
-                    margin: auto;
-                    padding: 20px;
-                }
-                
-                .remove-image {
-                    width: 200px;
-                    margin: 0;
-                    color: #fff;
-                    background: #cd4535;
-                    border: none;
-                    padding: 10px;
-                    border-radius: 4px;
-                    border-bottom: 4px solid #b02818;
-                    transition: all .2s ease;
-                    outline: none;
-                    text-transform: uppercase;
-                    font-weight: 700;
-                }
-                
-                .remove-image:hover {
-                    background: #c13b2a;
-                    color: #ffffff;
-                    transition: all .2s ease;
-                    cursor: pointer;
-                }
-                
-                .remove-image:active {
-                    border: 0;
-                    transition: all .2s ease;
+                    padding: 25px 0;
                 }
               
                 table, td, th {
@@ -276,55 +232,112 @@ function createIndex(folderPath) {
                 }
                 #note {
                     width: 100%;
-                    height: 50vh;
+                    height: 65vh;
+                }
+
+                #snackbar {
+                    visibility: hidden;
+                    min-width: 150px;
+                    margin-left: -125px;
+                    background-color: #28A745;
+                    color: #fff;
+                    text-align: center; 
+                    border-radius: 2px; 
+                    padding: 16px; 
+                    position: fixed; 
+                    z-index: 1; 
+                    right: 10px; 
+                    top: 10px; 
+                }
+                  
+                /* Show the snackbar when clicking on a button (class added with JavaScript) */
+                  #snackbar.show {
+                    visibility: visible; /* Show the snackbar */
+                    /* Add animation: Take 0.5 seconds to fade in and out the snackbar.
+                    However, delay the fade out process for 2.5 seconds */
+                    -webkit-animation: fadein 0.5s, fadeout 0.5s 2.5s;
+                    animation: fadein 0.5s, fadeout 0.5s 2.5s;
+                }
+                  
+                /* Animations to fade the snackbar in and out */
+                @-webkit-keyframes fadein {
+                    from {top: 0; opacity: 0;}
+                    to {top: 10px; opacity: 1;}
+                }
+                  
+                @keyframes fadein {
+                    from {top: 0; opacity: 0;}
+                    to {top: 10px; opacity: 1;}
+                }
+                  
+                @-webkit-keyframes fadeout {
+                    from {top: 10px; opacity: 1;}
+                    to {top: 0; opacity: 0;}
+                }
+                  
+                @keyframes fadeout {
+                    from {top: 10px; opacity: 1;}
+                    to {top: 0; opacity: 0;}
+                }
+
+                .remove{
+                    color:red; 
+                    cursor:pointer;
+                }
+
+                .margin-5{
+                    margin: 5px;
                 }
             </style>
             <form action="upload" method="post" enctype="multipart/form-data">
                 <div class="image-upload-wrap">
-                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)">
+                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)" multiple="multiple">
                     <div class="drag-text">
                         <h3 id='filename'>Drag and drop a file or select </h3>
                     </div>
                 </div>
-                <div class="file-upload-content">
-                    <img class="file-upload-image" src="#" alt="your image">
-                    <div class="image-title-wrap">
-                    <button type="button" onclick="removeUpload()" class="remove-image">Remove <span class="image-title">Uploaded Image</span></button>
-                    </div>
-                </div>
-                <input type="submit" style="margin: 5px;" value="upload">
+                <input type="submit" class='margin-5' value="upload">
             </form>
             </br>
             <div>Total : ${files.length} file</div>
             <table>
             <tr>
+                <th></th>
                 <th>Name</th>
                 <th>Size</th>
                 <th>Created date</th>
                 <th>Delete</th>
             </tr>
             ${files
-                .map((item) => `<tr>
-                                    <td><a href='./${item.name}' download='${item.name}'>${item.name}</a></td>
+                .map((item, index) => `<tr>
+                                    <td>${index}</td>
+                                    <td><a href='/${item.name}' download='${item.name}'>${item.name}</a></td>
                                     <td>${item.size}</td>
                                     <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
-                                    <td><a href='/delete/${item.name}' style='color:red; margin-left: 50px;'>Xóa</a></td>
+                                    <td><div onClick="Delete('${item.name}')" class='remove'>Xóa</div></td>
                                 </tr> 
                     `)
                 .join("\n")}
             </table>
 
             </br>
-            <div><a href='./note.txt' download='note.txt'>Note.txt</a></div>
-            <textarea id='note' onchange='onChangeNote(this.value)' onkeydown='onChangeNote(this.value)'>${note}</textarea>
-            
+            <div>Share text, code thì paste xuống dưới này</div>
+            <div><a href='/note.txt' download='note.txt'>Note.txt</a></div>
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
+            <div id="snackbar">Some text some message..</div>
             <script>
                 function onUpload(value){
-                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop a file or select';
                     console.log(value);
+                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop a file or select';
                     document.getElementById("filename").innerText = value;
+                    toast(value, 3000);
                 }
-                function onChangeNote(value){
+                onChangeNote(true);
+                function onChangeNote(noUpdate){
+                    let value = document.getElementById('note').value;
+                    if(value == this.value) return;
+                    this.value = value;
+                    if(noUpdate) return;
                     clearTimeout(this.timeout);
                     this.timeout = setTimeout(()=>{
                         console.log(value);
@@ -340,9 +353,34 @@ function createIndex(folderPath) {
                         };
                         fetch("/note", requestOptions)
                         .then(response => response.text())
-                        .then(result => console.log(result))
-                        .catch(error => console.log('error', error));
-                    }, 1000);
+                        .then(result => {
+                            toast("saved");
+                            console.log(result);
+                        })
+                        .catch(error =>{
+                            toast("save note error");
+                            console.log('error', error)
+                        });
+                    }, 500);
+                }
+                function toast(mess, timeout = 1000) {
+                    // Get the snackbar DIV
+                    let tag = document.getElementById("snackbar");
+                    tag.innerHTML = mess;
+                    tag.className = "show";
+                  
+                    setTimeout(()=>tag.className = tag.className.replace("show", ""), timeout);
+                }
+                function Delete(filename){
+                    console.log('delete ' + filename);
+                    fetch('/delete/' + filename)
+                    .then(x => {
+                        toast('Success');
+                        setTimeout(()=>location.reload(), 500);
+                    })
+                    .catch(err => {
+                        toast('Error');
+                    });
                 }
             </script>
             `;
@@ -354,6 +392,6 @@ function createIndex(folderPath) {
 
 app.listen(80, () => {
     console.log(`\nStart server at: ${new Date()}
-                HTTP server is listening at: ${"localhost"}:${"8080"}
+                HTTP server is listening at: ${"localhost"}:${"80"}
     `);
 });
