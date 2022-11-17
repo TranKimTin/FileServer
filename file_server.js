@@ -59,7 +59,7 @@ app.get("/delete/:file", (req, res) => {
         res.redirect(`/`);
     } catch (err) {
         console.log(err);
-        res.redirect(`/?alert=Lỗi delete`);
+        res.redirect(`/?alert=LĂ´̀ƒi delete`);
     }
 });
 app.post('/upload', (req, res) => {
@@ -73,11 +73,11 @@ app.post('/upload', (req, res) => {
             try {
                 if (err) {
                     console.log(err)
-                    res.redirect(`/?alert=Lỗi upload`);
+                    res.redirect(`/?alert=LĂ´̀ƒi upload`);
                     return;
                 }
                 let filename = files.filetoupload.originalFilename.trim();
-                if (filename == '') return res.redirect(`/?alert=Chưa chọn file`);
+                if (filename == '') return res.redirect(`/?alert=ChÆ°a chò£n file`);
                 let oldpath = files.filetoupload.filepath;
                 let newpath = __dirname + '/public/' + filename;
                 console.log(`copy file ${oldpath} to ${newpath}`);
@@ -88,7 +88,7 @@ app.post('/upload', (req, res) => {
             }
             catch (err) {
                 console.log(err)
-                res.redirect(`/?alert=Lỗi upload`);
+                res.redirect(`/?alert=LĂ´̀ƒi upload`);
             }
         });
     }
@@ -107,7 +107,7 @@ app.post("/note", (req, res) => {
         res.send(`ok`);
     } catch (err) {
         console.log(err);
-        res.send(`Lỗi note`);
+        res.send(`LĂ´̀ƒi note`);
     }
 });
 
@@ -335,13 +335,91 @@ function createIndex(folderPath) {
                                     <td><a href='/${item.name}' download='${item.name}'>${item.name}</a></td>
                                     <td>${item.size}</td>
                                     <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
-                                    <td><div onClick="Delete('${item.name}')" class='remove'>Xóa</div></td>
+                                    <td><div onClick="Delete('${item.name}')" class='remove'>Xòa</div></td>
                                 </tr> 
                     `)
                 .join("\n")}
             </table>
 
             </br>
-            <div>Share text, code thì paste xuống dưới này</div>
+            <div>Share text, code thì€ paste xuĂ´̀ng dÆ°Æ¡̀i nà€y</div>
             <div><a href='/note.txt' download='note.txt'>Note.txt</a></div>
-            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
+            <div id="snackbar">Some text some message..</div>
+            <script>
+                function onUpload(value){
+                    console.log(value);
+                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop or select file';
+                    document.getElementById("filename").innerText = value;
+                    if(value){
+                        toast(value);
+                        document.getElementById("form-upload").submit();
+                    }
+                }
+                onChangeNote(true);
+                function onChangeNote(noUpdate){
+                    let value = document.getElementById('note').value;
+                    if(value == this.value) return;
+                    this.value = value;
+                    if(noUpdate) return;
+                    clearTimeout(this.timeout);
+                    this.timeout = setTimeout(()=>{
+                        console.log(value);
+                        let myHeaders = new Headers();
+                        myHeaders.append("Content-Type", "application/json");
+
+                        let raw = JSON.stringify({data: value});
+                        let requestOptions = {
+                            method: 'POST',
+                            headers: myHeaders,
+                            body: raw,
+                            redirect: 'follow'
+                        };
+                        toast("saving...");
+                        fetch("/note", requestOptions)
+                        .then(response => response.text())
+                        .then(result => {
+                            toast("saved", 400);
+                            console.log(result);
+                        })
+                        .catch(error =>{
+                            toast("save note error");
+                            console.log('error', error)
+                        });
+                    }, 500);
+                }
+                function toast(mess, timeout = 99999) {
+                    console.log('toast', mess, timeout);
+                    let tag = document.getElementById("snackbar");
+                    tag.innerHTML = mess + (timeout == 99999 ? " <div class='loader'></div>" : "");
+                    tag.className = "show";
+                    clearTimeout(this.timeouts);
+                    if(timeout < 99999) {
+                        this.timeouts = setTimeout(()=>tag.className = tag.className.replace("show", ""), timeout);
+                    }
+                }
+                function Delete(filename){
+                    console.log('delete ' + filename);
+                    toast('Deleting... ' + filename);
+                    fetch('/delete/' + filename)
+                    .then(x => {
+                        toast('Success', 200);
+                        setTimeout(()=>location.reload(), 200);
+                    })
+                    .catch(err => {
+                        toast('Error', 200);
+                    });
+                }
+            </script>
+            `;
+        fs.writeFileSync(`${folderPath}/index.html`, html);
+    } catch (err) {
+        console.log(err);
+    }
+}
+
+app.listen(8080, () => {
+    console.log(`\nStart server at: ${new Date()}
+                HTTP server is listening at: ${"localhost"}:${"80"}
+    `);
+});
