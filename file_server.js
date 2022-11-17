@@ -76,8 +76,10 @@ app.post('/upload', (req, res) => {
                     res.redirect(`/?alert=Lỗi upload`);
                     return;
                 }
+                let filename = files.filetoupload.originalFilename.trim();
+                if (filename == '') return res.redirect(`/?alert=Chưa chọn file`);
                 let oldpath = files.filetoupload.filepath;
-                let newpath = __dirname + '/public/' + files.filetoupload.originalFilename;
+                let newpath = __dirname + '/public/' + filename;
                 console.log(`copy file ${oldpath} to ${newpath}`);
                 fs.copyFileSync(oldpath, newpath);
                 console.log(`delete file ${oldpath}`)
@@ -285,18 +287,37 @@ function createIndex(folderPath) {
                     cursor:pointer;
                 }
 
-                .margin-5{
-                    margin: 5px;
+                .loader {
+                    border: 2px solid #f3f3f3;
+                    border-radius: 50%;
+                    border-top: 2px solid #3498db;
+                    width: 15px;
+                    height: 15px;
+                    -webkit-animation: spin 2s linear infinite; /* Safari */
+                    animation: spin 2s linear infinite;
+                    margin-left: auto;
+                    margin-right: auto;
+                    margin-top: 5px;
+                }
+                  
+                /* Safari */
+                  @-webkit-keyframes spin {
+                    0% { -webkit-transform: rotate(0deg); }
+                    100% { -webkit-transform: rotate(360deg); }
+                }
+                  
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
                 }
             </style>
-            <form action="upload" method="post" enctype="multipart/form-data">
+            <form id="form-upload" action="upload" method="post" enctype="multipart/form-data">
                 <div class="image-upload-wrap">
-                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)" multiple="multiple">
+                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)" multiplee="multiple">
                     <div class="drag-text">
-                        <h3 id='filename'>Drag and drop a file or select </h3>
+                        <h3 id='filename'>Drag and drop or select file</h3>
                     </div>
                 </div>
-                <input type="submit" class='margin-5' value="upload">
             </form>
             </br>
             <div>Total : ${files.length} file</div>
@@ -323,75 +344,4 @@ function createIndex(folderPath) {
             </br>
             <div>Share text, code thì paste xuống dưới này</div>
             <div><a href='/note.txt' download='note.txt'>Note.txt</a></div>
-            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
-            <div id="snackbar">Some text some message..</div>
-            <script>
-                function onUpload(value){
-                    console.log(value);
-                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop a file or select';
-                    document.getElementById("filename").innerText = value;
-                    toast(value, 3000);
-                }
-                onChangeNote(true);
-                function onChangeNote(noUpdate){
-                    let value = document.getElementById('note').value;
-                    if(value == this.value) return;
-                    this.value = value;
-                    if(noUpdate) return;
-                    clearTimeout(this.timeout);
-                    this.timeout = setTimeout(()=>{
-                        console.log(value);
-                        let myHeaders = new Headers();
-                        myHeaders.append("Content-Type", "application/json");
-
-                        let raw = JSON.stringify({data: value});
-                        let requestOptions = {
-                            method: 'POST',
-                            headers: myHeaders,
-                            body: raw,
-                            redirect: 'follow'
-                        };
-                        fetch("/note", requestOptions)
-                        .then(response => response.text())
-                        .then(result => {
-                            toast("saved");
-                            console.log(result);
-                        })
-                        .catch(error =>{
-                            toast("save note error");
-                            console.log('error', error)
-                        });
-                    }, 500);
-                }
-                function toast(mess, timeout = 1000) {
-                    // Get the snackbar DIV
-                    let tag = document.getElementById("snackbar");
-                    tag.innerHTML = mess;
-                    tag.className = "show";
-                  
-                    setTimeout(()=>tag.className = tag.className.replace("show", ""), timeout);
-                }
-                function Delete(filename){
-                    console.log('delete ' + filename);
-                    fetch('/delete/' + filename)
-                    .then(x => {
-                        toast('Success');
-                        setTimeout(()=>location.reload(), 500);
-                    })
-                    .catch(err => {
-                        toast('Error');
-                    });
-                }
-            </script>
-            `;
-        fs.writeFileSync(`${folderPath}/index.html`, html);
-    } catch (err) {
-        console.log(err);
-    }
-}
-
-app.listen(80, () => {
-    console.log(`\nStart server at: ${new Date()}
-                HTTP server is listening at: ${"localhost"}:${"80"}
-    `);
-});
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}
