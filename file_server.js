@@ -25,8 +25,8 @@ app.use("/", function (req, res, next) {
             fs.mkdirSync(__dirname + "/public");
         }
 
-        if (!fs.existsSync(__dirname + "/public/note.txt")) {
-            fs.writeFileSync(__dirname + "/public/note.txt", '');
+        if (!fs.existsSync(__dirname + "/public/note")) {
+            fs.mkdirSync(__dirname + "/public/note");
         }
 
         let { alert = null } = req.query;
@@ -62,6 +62,27 @@ app.get("/delete/:file", (req, res) => {
         res.redirect(`/?alert=Lỗi delete`);
     }
 });
+
+function getnote(id) {
+    let path = __dirname + '/public/note/note_' + id + '.txt';
+    if (!fs.existsSync(path)) {
+        return '';
+    }
+    let note = fs.readFileSync(path).toString();
+    return note;
+}
+
+app.get("/getnote/:id", (req, res) => {
+    try {
+        let id = req.params.id;
+        let note = getnote(id);
+        res.send({ text: note });
+    } catch (err) {
+        console.log(err)
+        res.send(`Error`);
+    }
+});
+
 app.post('/upload', (req, res) => {
     try {
         console.log('/upload');
@@ -98,12 +119,12 @@ app.post('/upload', (req, res) => {
     }
 });
 
-app.post("/note", (req, res) => {
+app.post("/note/:id", (req, res) => {
     try {
-        console.log('write note ');
+        let id = req.params.id;
+        console.log('write note ' + id);
         let text = req.body.data || '';
-        console.log(text);
-        fs.writeFileSync(__dirname + "/public/note.txt", text);
+        fs.writeFileSync(__dirname + "/public/note/note_" + id + ".txt", text);
         res.send(`ok`);
     } catch (err) {
         console.log(err);
@@ -122,36 +143,36 @@ function getSortedFiles(dir) {
         };
     }).sort((a, b) => a.time - b.time);
     for (let file of files) {
-        let unit = 'b';
+        let unit = 'B';
         if (file.size > 1024) {
             file.size = (file.size / 1024).toFixed(1);
-            unit = 'Kb';
+            unit = 'KB';
             if (file.size > 1024) {
                 file.size = (file.size / 1024).toFixed(1);
-                unit = 'Mb';
+                unit = 'MB';
                 if (file.size > 1024) {
                     file.size = (file.size / 1024).toFixed(1);
-                    unit = 'Gb';
+                    unit = 'GB';
                 }
             }
         }
         file.size = file.size + ' ' + unit;
     }
-    files = files.filter(item => item.name != 'index.html' && item.name != 'note.txt');
+    files = files.filter(item => item.name != 'index.html' && item.name != 'note');
     return files;
 };
 
 function createIndex(folderPath) {
     try {
         let files = getSortedFiles(folderPath);
-        let note = fs.readFileSync(folderPath + '/note.txt').toString();
+        let note = getnote(1);
 
         let html = `
             <style>
                 body {
                     font-family: sans-serif;
                     background-color: #eeeeee;
-                    zoom: 1.5;
+                    zoom: 1;
                 }
                 
                 .file-upload {
@@ -221,17 +242,26 @@ function createIndex(folderPath) {
                     color: #15824B;
                     padding: 25px 0;
                 }
+
+                #search {
+                    padding: 6px 15px;
+                    border: 0;
+                    font-size: 24px;
+                    margin-top: 5px;
+                    margin-bottom: 5px;
+                }
               
-                table, td, th {
+                table {
+                    border-collapse: collapse;
+                    width: 60% !important;
+                }
+
+                td, th {
                     border: 1px solid black;
                     padding: 10px;
                     text-align: left;
                 }
 
-                table {
-                    border-collapse: collapse;
-                    max-width: 100%;
-                }
                 #note {
                     width: 100%;
                     height: 65vh;
@@ -299,6 +329,28 @@ function createIndex(folderPath) {
                     margin-right: auto;
                     margin-top: 5px;
                 }
+
+                .btn-copy {
+                    cursor: pointer;
+                    outline: 0;
+                    color: #fff;
+                    background-color: #0d6efd;
+                    border-color: #0d6efd;
+                    display: inline-block;
+                    font-weight: 400;
+                    line-height: 1.5;
+                    text-align: center;
+                    border: 1px solid transparent;
+                    padding: 6px 12px;
+                    font-size: 16px;
+                    border-radius: .25rem;
+                    transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+                    :hover {
+                        color: #fff;
+                        background-color: #0b5ed7;
+                        border-color: #0a58ca;
+                    }
+                }
                   
                 /* Safari */
                   @-webkit-keyframes spin {
@@ -321,8 +373,10 @@ function createIndex(folderPath) {
             </form>
             </br>
             <div>Total : ${files.length} file</div>
+            <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
             <table>
             <tr>
+                <th></th>
                 <th></th>
                 <th>Name</th>
                 <th>Size</th>
@@ -332,6 +386,7 @@ function createIndex(folderPath) {
             ${files
                 .map((item, index) => `<tr>
                                     <td>${index}</td>
+                                    <td><button class='btn-copy' onclick="copy('${item.name}')">Copy</button></td>
                                     <td><a href='/${item.name}' download='${item.name}'>${item.name}</a></td>
                                     <td>${item.size}</td>
                                     <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
@@ -343,7 +398,7 @@ function createIndex(folderPath) {
 
             </br>
             <div>Share text, code thì paste xuống dưới này</div>
-            <div><a href='/note.txt' download='note.txt'>Note.txt</a></div>
+            <span>Note id </span> <input type='number' value='1' id='notes' min='1' onchange="getNotes(this.value)">
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
@@ -356,11 +411,14 @@ function createIndex(folderPath) {
                         document.getElementById("form-upload").submit();
                     }
                 }
+                var cacheNote = '';
                 onChangeNote(true);
                 function onChangeNote(noUpdate){
+                    console.log('change note')
                     let value = document.getElementById('note').value;
-                    if(value == this.value) return;
-                    this.value = value;
+                    let id = document.getElementById('notes').value;
+                    if(value == cacheNote) return;
+                    cacheNote = value;
                     if(noUpdate) return;
                     clearTimeout(this.timeout);
                     this.timeout = setTimeout(()=>{
@@ -376,7 +434,7 @@ function createIndex(folderPath) {
                             redirect: 'follow'
                         };
                         toast("saving...");
-                        fetch("/note", requestOptions)
+                        fetch("/note/" + id, requestOptions)
                         .then(response => response.text())
                         .then(result => {
                             toast("saved", 400);
@@ -410,6 +468,50 @@ function createIndex(folderPath) {
                         toast('Error', 200);
                     });
                 }
+
+                function copy(text) {
+                    text = text.replaceAll(' ', '%20');
+                    text = 'http://' + location.host + '/' + text;
+                    var input = document.createElement('input');
+                    input.setAttribute('value', text);
+                    document.body.appendChild(input);
+                    input.select();
+                    var result = document.execCommand('copy');
+                    document.body.removeChild(input);
+                    toast('Copy ' + text, 1000);
+                    return result;
+                }
+                
+                function filter(text) {
+                    text = text.toLowerCase();
+                    let tr = document.getElementsByTagName('tr');
+                    for (let i=1; i<tr.length; i++){
+                        let filename = tr[i].cells[2].innerText.toLowerCase();
+                        tr[i].hidden =  !filename.includes(text);
+                    }
+                    toast('Filter ' + text, 1000);
+                }
+
+                function getNotes(id) {
+                    if (id == '') {
+                        id = 1;
+                        document.getElementById('notes').value = id;
+                    }
+                    toast('Get note ' + id + '...');
+                    fetch('/getnote/' + id)
+                    .then((response) => response.json())
+                    .then((response) => response.text)
+                    .then(response => {
+                        toast('Get note ' + id, 200);
+                        document.getElementById('note').value = response;
+                        cacheNote = response;
+                    })
+                    .catch(err => {
+                        console.log('errr',err)
+                        toast('Error', 200);
+                    });
+                }
+                
             </script>
             `;
         fs.writeFileSync(`${folderPath}/index.html`, html);
