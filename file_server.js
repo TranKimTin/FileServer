@@ -400,7 +400,7 @@ function createIndex(folderPath) {
             <div>Share text, code thì paste xuống dưới này</div>
             <span>Note id </span> <input type='number' value='1' id='notes' min='1' onchange="getNotes(this.value)">
             <button onclick="copyNote()">Copy</button>
-            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
                 function onUpload(value){
@@ -437,7 +437,7 @@ function createIndex(folderPath) {
                         toast("saving...");
                         fetch("/note/" + id, requestOptions)
                         .then(response => response.text())
-                         .then(result => {
+                        .then(result => {
                             toast("saved", 400);
                             console.log(result);
                         })
@@ -487,8 +487,8 @@ function createIndex(folderPath) {
                     let id = document.getElementById('notes').value;
                     let filename = 'note_' + id + '.txt';
                     copy('note/' + filename);
-                     }
-
+                }
+                
                 function filter(text) {
                     text = text.toLowerCase();
                     let tr = document.getElementsByTagName('tr');
@@ -518,7 +518,7 @@ function createIndex(folderPath) {
                         toast('Error', 200);
                     });
                 }
-
+                
             </script>
             `;
         fs.writeFileSync(`${folderPath}/index.html`, html);
@@ -527,7 +527,7 @@ function createIndex(folderPath) {
     }
 }
 
-app.listen(80, () => {
+app.listen(8080, () => {
     console.log(`\nStart server at: ${new Date()}
                 HTTP server is listening at: ${"localhost"}:${"80"}
     `);
