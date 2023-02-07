@@ -401,3 +401,134 @@ function createIndex(folderPath) {
             <span>Note id </span> <input type='number' value='1' id='notes' min='1' onchange="getNotes(this.value)">
             <button onclick="copyNote()">Copy</button>
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}
+            <div id="snackbar">Some text some message..</div>
+            <script>
+                function onUpload(value){
+                    console.log(value);
+                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop or select file';
+                    document.getElementById("filename").innerText = value;
+                    if(value){
+                        toast(value);
+                        document.getElementById("form-upload").submit();
+                    }
+                }
+                var cacheNote = '';
+                onChangeNote(true);
+                function onChangeNote(noUpdate){
+                    console.log('change note')
+                    let value = document.getElementById('note').value;
+                    let id = document.getElementById('notes').value;
+                    if(value == cacheNote) return;
+                    cacheNote = value;
+                    if(noUpdate) return;
+                    clearTimeout(this.timeout);
+                    this.timeout = setTimeout(()=>{
+                        console.log(value);
+                        let myHeaders = new Headers();
+                        myHeaders.append("Content-Type", "application/json");
+
+                        let raw = JSON.stringify({data: value});
+                        let requestOptions = {
+                            method: 'POST',
+                            headers: myHeaders,
+                            body: raw,
+                            redirect: 'follow'
+                        };
+                        toast("saving...");
+                        fetch("/note/" + id, requestOptions)
+                        .then(response => response.text())
+                         .then(result => {
+                            toast("saved", 400);
+                            console.log(result);
+                        })
+                        .catch(error =>{
+                            toast("save note error");
+                            console.log('error', error)
+                        });
+                    }, 500);
+                }
+                function toast(mess, timeout = 99999) {
+                    console.log('toast', mess, timeout);
+                    let tag = document.getElementById("snackbar");
+                    tag.innerHTML = mess + (timeout == 99999 ? " <div class='loader'></div>" : "");
+                    tag.className = "show";
+                    clearTimeout(this.timeouts);
+                    if(timeout < 99999) {
+                        this.timeouts = setTimeout(()=>tag.className = tag.className.replace("show", ""), timeout);
+                    }
+                }
+                function Delete(filename){
+                    console.log('delete ' + filename);
+                    toast('Deleting... ' + filename);
+                    fetch('/delete/' + filename)
+                    .then(x => {
+                        toast('Success', 200);
+                        setTimeout(()=>location.reload(), 200);
+                    })
+                    .catch(err => {
+                        toast('Error', 200);
+                    });
+                }
+
+                function copy(text) {
+                    text = text.replaceAll(' ', '%20');
+                    text = 'http://' + location.host + '/' + text;
+                    var input = document.createElement('input');
+                    input.setAttribute('value', text);
+                    document.body.appendChild(input);
+                    input.select();
+                    var result = document.execCommand('copy');
+                    document.body.removeChild(input);
+                    toast('Copy ' + text, 1000);
+                    return result;
+                }
+
+                function copyNote() {
+                    let id = document.getElementById('notes').value;
+                    let filename = 'note_' + id + '.txt';
+                    copy('note/' + filename);
+                     }
+
+                function filter(text) {
+                    text = text.toLowerCase();
+                    let tr = document.getElementsByTagName('tr');
+                    for (let i=1; i<tr.length; i++){
+                        let filename = tr[i].cells[2].innerText.toLowerCase();
+                        tr[i].hidden =  !filename.includes(text);
+                    }
+                    toast('Filter ' + text, 1000);
+                }
+
+                function getNotes(id) {
+                    if (id == '') {
+                        id = 1;
+                        document.getElementById('notes').value = id;
+                    }
+                    toast('Get note ' + id + '...');
+                    fetch('/getnote/' + id)
+                    .then((response) => response.json())
+                    .then((response) => response.text)
+                    .then(response => {
+                        toast('Get note ' + id, 200);
+                        document.getElementById('note').value = response;
+                        cacheNote = response;
+                    })
+                    .catch(err => {
+                        console.log('errr',err)
+                        toast('Error', 200);
+                    });
+                }
+
+            </script>
+            `;
+        fs.writeFileSync(`${folderPath}/index.html`, html);
+    } catch (err) {
+        console.log(err);
+    }
+}
+
+app.listen(80, () => {
+    console.log(`\nStart server at: ${new Date()}
+                HTTP server is listening at: ${"localhost"}:${"80"}
+    `);
+});
