@@ -1,3 +1,4 @@
+// pkg -t node18-win --public file_server.js
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
