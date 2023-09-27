@@ -1,4 +1,174 @@
+// pkg -t node18-win --public file_server.js
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const body_parser = require("body-parser");
+const path = require("path");
+const fs = require("fs");
+const app = express();
+const moment = require("moment");
+const formidable = require('formidable');
 
+app.disable("x-powered-by");
+app.set("trust proxy", true);
+app.use(cors());
+app.use(
+    morgan(
+        ":date[iso] :remote-addr :remote-user :user-agent :method :url HTTP/:http-version :status :res[content-length] - :response-time ms"
+    )
+);
+app.use(body_parser.json({ limit: "50mb" }));
+app.use(body_parser.urlencoded({ extended: false, limit: "50mb" }));
+// app.use('/api/', routes);
+app.use("/", function (req, res, next) {
+    try {
+        if (!fs.existsSync("./public")) {
+            fs.mkdirSync("./public");
+        }
+
+        if (!fs.existsSync("./public/note")) {
+            fs.mkdirSync("./public/note");
+        }
+
+        let { alert = null } = req.query;
+        if (alert) {
+            return res.send(`
+                <script> 
+                    alert('${alert}');
+                    window.location.href = '/';
+                </script >
+            `);
+        }
+        else {
+            createIndex("./public", alert);
+            // res.redirect('/');
+            next();
+        }
+    }
+    catch (err) {
+        console.log(err);
+        next();
+    }
+
+}, express.static("./public"));
+
+app.get("/delete/:file", (req, res) => {
+    try {
+        let file = req.params.file;
+        console.log(`/delete/${file}`);
+        fs.unlinkSync(`./public/${file}`);
+        res.redirect(`/`);
+    } catch (err) {
+        console.log(err);
+        res.redirect(`/?alert=Lỗi delete`);
+    }
+});
+
+function getnote(id) {
+    let path = './public/note/note_' + id + '.txt';
+    if (!fs.existsSync(path)) {
+        return '';
+    }
+    let note = fs.readFileSync(path).toString();
+    return note;
+}
+
+app.get("/getnote/:id", (req, res) => {
+    try {
+        let id = req.params.id;
+        let note = getnote(id);
+        res.send({ text: note });
+    } catch (err) {
+        console.log(err)
+        res.send(`Error`);
+    }
+});
+
+app.post('/upload', (req, res) => {
+    try {
+        console.log('/upload');
+        let maxFileSize = 10 * 1024 * 1024 * 1024; //10GB
+        let form = new formidable.IncomingForm({ maxFileSize });
+        form.multiples = true;
+        form.maxFileSize = maxFileSize;
+        form.parse(req, function (err, fields, files) {
+            try {
+                if (err) {
+                    console.log(err)
+                    res.redirect(`/?alert=Lỗi upload`);
+                    return;
+                }
+                let filename = files.filetoupload.originalFilename.trim();
+                if (filename == '') return res.redirect(`/?alert=Chưa chọn file`);
+                let oldpath = files.filetoupload.filepath;
+                let newpath = './public/' + filename;
+                console.log(`copy file ${oldpath} to ${newpath}`);
+                fs.copyFileSync(oldpath, newpath);
+                console.log(`delete file ${oldpath}`)
+                fs.unlinkSync(oldpath);
+                res.redirect(`/`);
+            }
+            catch (err) {
+                console.log(err)
+                res.redirect(`/?alert=Lỗi upload`);
+            }
+        });
+    }
+    catch (err) {
+        console.log(err)
+        res.redirect(`/`);
+    }
+});
+
+app.post("/note/:id", (req, res) => {
+    try {
+        let id = req.params.id;
+        console.log('write note ' + id);
+        let text = req.body.data || '';
+        fs.writeFileSync("./public/note/note_" + id + ".txt", text);
+        res.send(`ok`);
+    } catch (err) {
+        console.log(err);
+        res.send(`Lỗi note`);
+    }
+});
+
+function getSortedFiles(dir) {
+    let files = fs.readdirSync(dir);
+    files = files.map(fileName => {
+        let f = fs.statSync(`${dir}/${fileName}`);
+        return {
+            name: fileName,
+            time: f.mtime.getTime(),
+            size: f.size
+        };
+    }).sort((a, b) => a.time - b.time);
+    for (let file of files) {
+        let unit = 'B';
+        if (file.size > 1024) {
+            file.size = (file.size / 1024).toFixed(1);
+            unit = 'KB';
+            if (file.size > 1024) {
+                file.size = (file.size / 1024).toFixed(1);
+                unit = 'MB';
+                if (file.size > 1024) {
+                    file.size = (file.size / 1024).toFixed(1);
+                    unit = 'GB';
+                }
+            }
+        }
+        file.size = file.size + ' ' + unit;
+    }
+    files = files.filter(item => item.name != 'index.html' && item.name != 'note');
+    return files;
+};
+
+function createIndex(folderPath) {
+    try {
+        let files = getSortedFiles(folderPath);
+        let note = getnote(1);
+
+        let html = `
             <style>
                 body {
                     font-family: sans-serif;
@@ -203,7 +373,7 @@
                 </div>
             </form>
             </br>
-            <div>Total : 0 file</div>
+            <div>Total : ${files.length} file</div>
             <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
             <table>
             <tr>
@@ -214,19 +384,29 @@
                 <th>Created date</th>
                 <th>Delete</th>
             </tr>
-            
+            ${files
+                .map((item, index) => `<tr>
+                                    <td>${index}</td>
+                                    <td><button class='btn-copy' onclick="copy('${item.name}')">Copy</button></td>
+                                    <td><a href='/${item.name}' download='${item.name}'>${item.name}</a></td>
+                                    <td>${item.size}</td>
+                                    <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
+                                    <td><div onClick="Delete('${item.name}')" class='remove'>Xóa</div></td>
+                                </tr> 
+                    `)
+                .join("\n")}
             </table>
 
             </br>
             <div>Share text, code thì paste xuống dưới này</div>
             <span>Note id </span> <input type='number' value='1' id='notes' min='1' onchange="getNotes(this.value)">
             <button onclick="copyNote()">Copy</button>
-            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'></textarea>
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
                 function onUpload(value){
                     console.log(value);
-                    value = value.slice(value.lastIndexOf('\\') + 1) || 'Drag and drop or select file';
+                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop or select file';
                     document.getElementById("filename").innerText = value;
                     if(value){
                         toast(value);
@@ -341,4 +521,15 @@
                 }
                 
             </script>
-            
+            `;
+        fs.writeFileSync(`${folderPath}/index.html`, html);
+    } catch (err) {
+        console.log(err);
+    }
+}
+
+app.listen(8080, () => {
+    console.log(`\nStart server at: ${new Date()}
+                HTTP server is listening at: ${"localhost"}:${"80"}
+    `);
+});
