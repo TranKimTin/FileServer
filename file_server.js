@@ -56,6 +56,10 @@ const logPath = __dirname + '/../BotFather/botfather_c++/logs';
 if (fs.existsSync(logPath)) {
     app.use(express.static(logPath));
     console.log('public ', logPath);
+    app.get("/logs", (req, res) => {
+        const latest = `botfather_${moment().format('YYYY-MM-DD')}.log`;
+        res.redirect('/' + latest);
+    });
 }
 
 app.get("/delete/:file", (req, res) => {
