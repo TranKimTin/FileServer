@@ -52,7 +52,7 @@ app.use("/", function (req, res, next) {
 
 }, express.static(__dirname + "/public"));
 
-const logPath = '~/BotFather/botfather_c++/logs';
+const logPath = '/root/BotFather/botfather_c++/logs/';
 if (fs.existsSync(logPath)) {
     app.use(express.static(logPath));
 }
