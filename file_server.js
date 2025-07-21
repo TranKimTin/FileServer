@@ -52,7 +52,8 @@ app.use("/", function (req, res, next) {
 
 }, express.static(__dirname + "/public"));
 
-const logPath = __dirname + '../BotFather/botfather_c++/logs/';
+const logPath = __dirname + '../BotFather/botfather_c++/logs';
+console.log(logPath);
 if (fs.existsSync(logPath)) {
     app.use(express.static(logPath));
     console.log('public ', logPath);
