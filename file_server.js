@@ -52,7 +52,7 @@ app.use("/", function (req, res, next) {
 
 }, express.static(__dirname + "/public"));
 
-const logPath = '/root/BotFather/botfather_c++/logs/';
+const logPath = __dirname + '../BotFather/botfather_c++/logs/';
 if (fs.existsSync(logPath)) {
     app.use(express.static(logPath));
 }
@@ -533,7 +533,7 @@ function createIndex(folderPath) {
     }
 }
 
-app.listen(8080, () => {
+app.listen(8082, () => {
     console.log(`\nStart server at: ${new Date()}
                 HTTP server is listening at: ${"localhost"}:${"80"}
     `);
