@@ -52,6 +52,11 @@ app.use("/", function (req, res, next) {
 
 }, express.static(__dirname + "/public"));
 
+const logPath = '~/BotFather/botfather_c++/logs';
+if (fs.existsSync(logPath)) {
+    app.use(express.static(logPath));
+}
+
 app.get("/delete/:file", (req, res) => {
     try {
         let file = req.params.file;
