@@ -196,7 +196,7 @@
             </style>
             <form id="form-upload" action="upload" method="post" enctype="multipart/form-data">
                 <div class="image-upload-wrap">
-                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)" multiplee="multiple">
+                    <input id="files" type="file" name="filetoupload[]" class="file-upload-input" onchange="onUpload(this)" multiple>
                     <div class="drag-text">
                         <h3 id='filename'>Drag and drop or select file</h3>
                     </div>
@@ -224,15 +224,38 @@
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'></textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
-                function onUpload(value){
-                    console.log(value);
-                    value = value.slice(value.lastIndexOf('\\') + 1) || 'Drag and drop or select file';
-                    document.getElementById("filename").innerText = value;
-                    if(value){
-                        toast(value);
-                        document.getElementById("form-upload").submit();
-                    }
+                function onUpload(input){
+                    let files = (input && input.files) ? input.files : [];
+                    uploadFiles(files);
                 }
+                function uploadFiles(files) {
+                    if (!files || !files.length) return;
+                    let label = files.length === 1 ? files[0].name : files.length + ' files selected';
+                    document.getElementById("filename").innerText = label;
+                    toast('Uploading ' + label + '...');
+
+                    let formData = new FormData();
+                    for (let i = 0; i < files.length; i++) {
+                        formData.append('filetoupload[]', files[i], files[i].name);
+                    }
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(() => location.reload())
+                    .catch(err => {
+                        console.log('upload error', err);
+                        toast('Lỗi upload', 1000);
+                    });
+                }
+                let uploadWrap = document.querySelector('.image-upload-wrap');
+                uploadWrap.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                });
+                uploadWrap.addEventListener('drop', function (event) {
+                    event.preventDefault();
+                    uploadFiles(event.dataTransfer.files);
+                });
                 var cacheNote = '';
                 onChangeNote(true);
                 function onChangeNote(noUpdate){

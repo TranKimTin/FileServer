@@ -98,9 +98,11 @@ app.post('/upload', (req, res) => {
     try {
         console.log('/upload');
         let maxFileSize = 10 * 1024 * 1024 * 1024; //10GB
-        let form = new formidable.IncomingForm({ maxFileSize });
-        form.multiples = true;
-        form.maxFileSize = maxFileSize;
+        let form = new formidable.IncomingForm({
+            maxFileSize,
+            multiples: true,
+            maxFiles: 1000
+        });
         form.parse(req, function (err, fields, files) {
             try {
                 if (err) {
@@ -108,14 +110,27 @@ app.post('/upload', (req, res) => {
                     res.redirect(`/?alert=Lỗi upload`);
                     return;
                 }
-                let filename = files.filetoupload.originalFilename.trim();
-                if (filename == '') return res.redirect(`/?alert=Chưa chọn file`);
-                let oldpath = files.filetoupload.filepath;
-                let newpath = __dirname + '/public/' + filename;
-                console.log(`copy file ${oldpath} to ${newpath}`);
-                fs.copyFileSync(oldpath, newpath);
-                console.log(`delete file ${oldpath}`)
-                fs.unlinkSync(oldpath);
+                let uploadFiles = [];
+                for (let key of Object.keys(files || {})) {
+                    let fileValue = files[key];
+                    if (Array.isArray(fileValue)) {
+                        uploadFiles.push(...fileValue);
+                    } else if (fileValue) {
+                        uploadFiles.push(fileValue);
+                    }
+                }
+                uploadFiles = uploadFiles.filter(file => file && (file.originalFilename || '').trim() !== '');
+                if (uploadFiles.length === 0) return res.redirect(`/?alert=Chưa chọn file`);
+
+                for (let file of uploadFiles) {
+                    let filename = file.originalFilename.trim();
+                    let oldpath = file.filepath;
+                    let newpath = __dirname + '/public/' + filename;
+                    console.log(`copy file ${oldpath} to ${newpath}`);
+                    fs.copyFileSync(oldpath, newpath);
+                    console.log(`delete file ${oldpath}`)
+                    fs.unlinkSync(oldpath);
+                }
                 res.redirect(`/`);
             }
             catch (err) {
@@ -376,7 +391,7 @@ function createIndex(folderPath) {
             </style>
             <form id="form-upload" action="upload" method="post" enctype="multipart/form-data">
                 <div class="image-upload-wrap">
-                    <input id="files" type="file" name="filetoupload" class="file-upload-input" onchange="onUpload(this.value)" multiplee="multiple">
+                    <input id="files" type="file" name="filetoupload[]" class="file-upload-input" onchange="onUpload(this)" multiple>
                     <div class="drag-text">
                         <h3 id='filename'>Drag and drop or select file</h3>
                     </div>
@@ -414,15 +429,38 @@ function createIndex(folderPath) {
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
-                function onUpload(value){
-                    console.log(value);
-                    value = value.slice(value.lastIndexOf('\\\\') + 1) || 'Drag and drop or select file';
-                    document.getElementById("filename").innerText = value;
-                    if(value){
-                        toast(value);
-                        document.getElementById("form-upload").submit();
-                    }
+                function onUpload(input){
+                    let files = (input && input.files) ? input.files : [];
+                    uploadFiles(files);
                 }
+                function uploadFiles(files) {
+                    if (!files || !files.length) return;
+                    let label = files.length === 1 ? files[0].name : files.length + ' files selected';
+                    document.getElementById("filename").innerText = label;
+                    toast('Uploading ' + label + '...');
+
+                    let formData = new FormData();
+                    for (let i = 0; i < files.length; i++) {
+                        formData.append('filetoupload[]', files[i], files[i].name);
+                    }
+                    fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(() => location.reload())
+                    .catch(err => {
+                        console.log('upload error', err);
+                        toast('Lỗi upload', 1000);
+                    });
+                }
+                let uploadWrap = document.querySelector('.image-upload-wrap');
+                uploadWrap.addEventListener('dragover', function (event) {
+                    event.preventDefault();
+                });
+                uploadWrap.addEventListener('drop', function (event) {
+                    event.preventDefault();
+                    uploadFiles(event.dataTransfer.files);
+                });
                 var cacheNote = '';
                 onChangeNote(true);
                 function onChangeNote(noUpdate){
