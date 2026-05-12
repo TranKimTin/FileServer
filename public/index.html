@@ -202,19 +202,53 @@
                     </div>
                 </div>
             </form>
+            <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
+            <button type="button" class="btn-copy" onclick="document.getElementById('folders').click()">Upload folder</button>
+            <div>Current folder: <b>/</b></div>
+            
             </br>
-            <div>Total : 0 file</div>
+            <div>Total : 3 item</div>
             <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
             <table>
             <tr>
                 <th></th>
                 <th></th>
+                <th>Type</th>
                 <th>Name</th>
                 <th>Size</th>
                 <th>Created date</th>
                 <th>Delete</th>
             </tr>
-            
+            <tr>
+                                    <td>0</td>
+                                    <td>-</td>
+                                    <td>Folder</td>
+                                    <td><a href='/?dir=MyHouse'>MyHouse</a></td>
+                                    <td>-</td>
+                                    <td>12/05/2026 22:49:37</td>
+                                    <td><div onClick='Delete("MyHouse")' class='remove'>Xóa</div></td>
+                                </tr> 
+                    
+<tr>
+                                    <td>1</td>
+                                    <td><button class='btn-copy' onclick='copy("one.txt")'>Copy</button></td>
+                                    <td>File</td>
+                                    <td><a href='/one.txt' download='one.txt'>one.txt</a></td>
+                                    <td>7 B</td>
+                                    <td>12/05/2026 22:35:50</td>
+                                    <td><div onClick='Delete("one.txt")' class='remove'>Xóa</div></td>
+                                </tr> 
+                    
+<tr>
+                                    <td>2</td>
+                                    <td><button class='btn-copy' onclick='copy("two.txt")'>Copy</button></td>
+                                    <td>File</td>
+                                    <td><a href='/two.txt' download='two.txt'>two.txt</a></td>
+                                    <td>7 B</td>
+                                    <td>12/05/2026 22:35:50</td>
+                                    <td><div onClick='Delete("two.txt")' class='remove'>Xóa</div></td>
+                                </tr> 
+                    
             </table>
 
             </br>
@@ -224,11 +258,16 @@
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'></textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
+                const CURRENT_DIR = "";
                 function onUpload(input){
                     let files = (input && input.files) ? input.files : [];
-                    uploadFiles(files);
+                    uploadFiles(files, false);
                 }
-                function uploadFiles(files) {
+                function onUploadFolder(input){
+                    let files = (input && input.files) ? input.files : [];
+                    uploadFiles(files, true);
+                }
+                function uploadFiles(files, keepRelativePath) {
                     if (!files || !files.length) return;
                     let label = files.length === 1 ? files[0].name : files.length + ' files selected';
                     document.getElementById("filename").innerText = label;
@@ -237,7 +276,12 @@
                     let formData = new FormData();
                     for (let i = 0; i < files.length; i++) {
                         formData.append('filetoupload[]', files[i], files[i].name);
+                        if (keepRelativePath) {
+                            let relativePath = files[i].webkitRelativePath || files[i].name;
+                            formData.append('relativePaths[]', relativePath);
+                        }
                     }
+                    formData.append('currentDir', CURRENT_DIR);
                     fetch('/upload', {
                         method: 'POST',
                         body: formData
@@ -254,7 +298,7 @@
                 });
                 uploadWrap.addEventListener('drop', function (event) {
                     event.preventDefault();
-                    uploadFiles(event.dataTransfer.files);
+                    uploadFiles(event.dataTransfer.files, false);
                 });
                 var cacheNote = '';
                 onChangeNote(true);
@@ -304,7 +348,7 @@
                 function Delete(filename){
                     console.log('delete ' + filename);
                     toast('Deleting... ' + filename);
-                    fetch('/delete/' + filename)
+                    fetch('/delete?path=' + encodeURIComponent(filename) + '&dir=' + encodeURIComponent(CURRENT_DIR))
                     .then(x => {
                         toast('Success', 200);
                         setTimeout(()=>location.reload(), 200);
@@ -315,7 +359,7 @@
                 }
 
                 function copy(text) {
-                    text = text.replaceAll(' ', '%20');
+                    text = encodeURI(text);
                     text = 'http://' + location.host + '/' + text;
                     var input = document.createElement('input');
                     input.setAttribute('value', text);
@@ -337,7 +381,7 @@
                     text = text.toLowerCase();
                     let tr = document.getElementsByTagName('tr');
                     for (let i=1; i<tr.length; i++){
-                        let filename = tr[i].cells[2].innerText.toLowerCase();
+                        let filename = tr[i].cells[3].innerText.toLowerCase();
                         tr[i].hidden =  !filename.includes(text);
                     }
                     toast('Filter ' + text, 1000);

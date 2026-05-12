@@ -22,12 +22,13 @@ app.use(body_parser.urlencoded({ extended: false, limit: "50mb" }));
 // app.use('/api/', routes);
 app.use("/", function (req, res, next) {
     try {
-        if (!fs.existsSync(__dirname + "/public")) {
-            fs.mkdirSync(__dirname + "/public");
+        const publicRoot = __dirname + "/public";
+        if (!fs.existsSync(publicRoot)) {
+            fs.mkdirSync(publicRoot);
         }
 
-        if (!fs.existsSync(__dirname + "/public/note")) {
-            fs.mkdirSync(__dirname + "/public/note");
+        if (!fs.existsSync(publicRoot + "/note")) {
+            fs.mkdirSync(publicRoot + "/note");
         }
 
         let { alert = null } = req.query;
@@ -40,7 +41,14 @@ app.use("/", function (req, res, next) {
             `);
         }
         else {
-            createIndex(__dirname + "/public", alert);
+            let dir = sanitizeRelativePath(req.query.dir || '', '') || '';
+            if (dir) {
+                const target = resolvePathInPublic(dir);
+                if (!target || !fs.existsSync(target.absolutePath) || !fs.statSync(target.absolutePath).isDirectory()) {
+                    return res.redirect('/?alert=Folder không tồn tại');
+                }
+            }
+            createIndex(publicRoot, dir);
             // res.redirect('/');
             next();
         }
@@ -62,12 +70,42 @@ if (fs.existsSync(logPath)) {
     });
 }
 
-app.get("/delete/:file", (req, res) => {
+function sanitizeRelativePath(relativePath, fallbackName = '') {
+    let raw = String(relativePath || fallbackName || '').trim();
+    if (!raw) return null;
+    raw = raw.replace(/\\/g, '/').replace(/^\/+/, '');
+    let parts = raw.split('/').filter(Boolean).filter(part => part !== '.' && part !== '..');
+    if (parts.length === 0) return null;
+    return parts.join('/');
+}
+
+function resolvePathInPublic(relativePath, fallbackName = '') {
+    const safePath = sanitizeRelativePath(relativePath, fallbackName);
+    if (!safePath) return null;
+    const publicRoot = path.join(__dirname, 'public');
+    const absolutePath = path.resolve(publicRoot, safePath);
+    if (absolutePath !== publicRoot && !absolutePath.startsWith(publicRoot + path.sep)) {
+        return null;
+    }
+    return { safePath, absolutePath };
+}
+
+app.get("/delete", (req, res) => {
     try {
-        let file = req.params.file;
-        console.log(`/delete/${file}`);
-        fs.unlinkSync(__dirname + `/public/${file}`);
-        res.redirect(`/`);
+        let file = req.query.path || '';
+        let dir = sanitizeRelativePath(req.query.dir || '', '') || '';
+        const redirectUrl = dir ? `/?dir=${encodeURIComponent(dir)}` : '/';
+        const target = resolvePathInPublic(file);
+        if (!target || !fs.existsSync(target.absolutePath)) {
+            return res.redirect(`${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}alert=Lỗi delete`);
+        }
+        console.log(`/delete ${target.safePath}`);
+        if (fs.statSync(target.absolutePath).isDirectory()) {
+            fs.rmSync(target.absolutePath, { recursive: true, force: true });
+        } else {
+            fs.unlinkSync(target.absolutePath);
+        }
+        res.redirect(redirectUrl);
     } catch (err) {
         console.log(err);
         res.redirect(`/?alert=Lỗi delete`);
@@ -119,19 +157,33 @@ app.post('/upload', (req, res) => {
                         uploadFiles.push(fileValue);
                     }
                 }
+                let currentDir = sanitizeRelativePath(fields.currentDir || '', '') || '';
+                const relativePathsRaw = fields['relativePaths[]'] ?? fields.relativePaths;
+                const relativePaths = Array.isArray(relativePathsRaw)
+                    ? relativePathsRaw
+                    : (relativePathsRaw ? [relativePathsRaw] : []);
+                const redirectUrl = currentDir ? `/?dir=${encodeURIComponent(currentDir)}` : '/';
                 uploadFiles = uploadFiles.filter(file => file && (file.originalFilename || '').trim() !== '');
-                if (uploadFiles.length === 0) return res.redirect(`/?alert=Chưa chọn file`);
+                if (uploadFiles.length === 0) return res.redirect(`${redirectUrl}${redirectUrl.includes('?') ? '&' : '?'}alert=Chưa chọn file`);
 
-                for (let file of uploadFiles) {
-                    let filename = file.originalFilename.trim();
+                for (let index = 0; index < uploadFiles.length; index++) {
+                    let file = uploadFiles[index];
+                    let originalName = (file.originalFilename || '').trim();
+                    let filename = path.basename(originalName);
+                    if (!filename) continue;
                     let oldpath = file.filepath;
-                    let newpath = __dirname + '/public/' + filename;
+                    let clientRelativePath = sanitizeRelativePath(relativePaths[index] || '', '') || filename;
+                    let relativePath = currentDir ? `${currentDir}/${clientRelativePath}` : clientRelativePath;
+                    const target = resolvePathInPublic(relativePath, filename);
+                    if (!target) continue;
+                    let newpath = target.absolutePath;
+                    fs.mkdirSync(path.dirname(newpath), { recursive: true });
                     console.log(`copy file ${oldpath} to ${newpath}`);
                     fs.copyFileSync(oldpath, newpath);
                     console.log(`delete file ${oldpath}`)
                     fs.unlinkSync(oldpath);
                 }
-                res.redirect(`/`);
+                res.redirect(redirectUrl);
             }
             catch (err) {
                 console.log(err)
@@ -158,40 +210,62 @@ app.post("/note/:id", (req, res) => {
     }
 });
 
-function getSortedFiles(dir) {
-    let files = fs.readdirSync(dir);
-    files = files.map(fileName => {
-        let f = fs.statSync(`${dir}/${fileName}`);
-        return {
-            name: fileName,
-            time: f.mtime.getTime(),
-            size: f.size
-        };
-    }).sort((a, b) => a.time - b.time);
-    for (let file of files) {
-        let unit = 'B';
-        if (file.size > 1024) {
-            file.size = (file.size / 1024).toFixed(1);
-            unit = 'KB';
-            if (file.size > 1024) {
-                file.size = (file.size / 1024).toFixed(1);
-                unit = 'MB';
-                if (file.size > 1024) {
-                    file.size = (file.size / 1024).toFixed(1);
-                    unit = 'GB';
-                }
+function formatFileSize(size) {
+    let unit = 'B';
+    if (size > 1024) {
+        size = (size / 1024).toFixed(1);
+        unit = 'KB';
+        if (size > 1024) {
+            size = (size / 1024).toFixed(1);
+            unit = 'MB';
+            if (size > 1024) {
+                size = (size / 1024).toFixed(1);
+                unit = 'GB';
             }
         }
-        file.size = file.size + ' ' + unit;
     }
-    files = files.filter(item => item.name != 'index.html' && item.name != 'note');
+    return size + ' ' + unit;
+}
+
+function getSortedFiles(dir, rootDir, currentDir) {
+    let files = fs.readdirSync(dir, { withFileTypes: true }).map(entry => {
+        let fullPath = path.join(dir, entry.name);
+        let relativePath = path.relative(rootDir, fullPath).replace(/\\/g, '/');
+        if (!relativePath) relativePath = entry.name;
+        let f = fs.statSync(fullPath);
+        return {
+            name: entry.name,
+            path: relativePath,
+            isDir: entry.isDirectory(),
+            time: f.mtime.getTime(),
+            size: entry.isDirectory() ? '-' : formatFileSize(f.size)
+        };
+    });
+    files = files.filter(item => {
+        if (item.path === 'index.html') return false;
+        if (item.path === 'note' && !currentDir) return false;
+        return true;
+    });
+    files.sort((a, b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+    });
     return files;
 };
 
-function createIndex(folderPath) {
+function createIndex(rootPath, currentDir = '') {
     try {
-        let files = getSortedFiles(folderPath);
+        const target = currentDir ? resolvePathInPublic(currentDir) : { safePath: '', absolutePath: rootPath };
+        if (!target || !fs.existsSync(target.absolutePath)) return;
+        let files = getSortedFiles(target.absolutePath, rootPath, currentDir);
         let note = getnote(1);
+        let currentPathLabel = currentDir ? '/' + currentDir : '/';
+        let parentDir = '';
+        if (currentDir) {
+            const chunks = currentDir.split('/');
+            chunks.pop();
+            parentDir = chunks.join('/');
+        }
 
         let html = `
             <style>
@@ -397,13 +471,18 @@ function createIndex(folderPath) {
                     </div>
                 </div>
             </form>
+            <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
+            <button type="button" class="btn-copy" onclick="document.getElementById('folders').click()">Upload folder</button>
+            <div>Current folder: <b>${currentPathLabel}</b></div>
+            ${currentDir ? `<button type="button" class="btn-copy" onclick="location.href='/?dir=${encodeURIComponent(parentDir)}'">Up</button>` : ''}
             </br>
-            <div>Total : ${files.length} file</div>
+            <div>Total : ${files.length} item</div>
             <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
             <table>
             <tr>
                 <th></th>
                 <th></th>
+                <th>Type</th>
                 <th>Name</th>
                 <th>Size</th>
                 <th>Created date</th>
@@ -412,11 +491,12 @@ function createIndex(folderPath) {
             ${files
                 .map((item, index) => `<tr>
                                     <td>${index}</td>
-                                    <td><button class='btn-copy' onclick="copy('${item.name}')">Copy</button></td>
-                                    <td><a href='/${item.name}' download='${item.name}'>${item.name}</a></td>
+                                    <td>${item.isDir ? '-' : `<button class='btn-copy' onclick='copy(${JSON.stringify(item.path)})'>Copy</button>`}</td>
+                                    <td>${item.isDir ? 'Folder' : 'File'}</td>
+                                    <td>${item.isDir ? `<a href='/?dir=${encodeURIComponent(item.path)}'>${item.name}</a>` : `<a href='/${encodeURI(item.path)}' download='${item.name}'>${item.name}</a>`}</td>
                                     <td>${item.size}</td>
                                     <td>${moment(item.time).format('DD/MM/YYYY HH:mm:ss')}</td>
-                                    <td><div onClick="Delete('${item.name}')" class='remove'>Xóa</div></td>
+                                    <td><div onClick='Delete(${JSON.stringify(item.path)})' class='remove'>Xóa</div></td>
                                 </tr> 
                     `)
                 .join("\n")}
@@ -429,11 +509,16 @@ function createIndex(folderPath) {
             <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>${note}</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
+                const CURRENT_DIR = ${JSON.stringify(currentDir)};
                 function onUpload(input){
                     let files = (input && input.files) ? input.files : [];
-                    uploadFiles(files);
+                    uploadFiles(files, false);
                 }
-                function uploadFiles(files) {
+                function onUploadFolder(input){
+                    let files = (input && input.files) ? input.files : [];
+                    uploadFiles(files, true);
+                }
+                function uploadFiles(files, keepRelativePath) {
                     if (!files || !files.length) return;
                     let label = files.length === 1 ? files[0].name : files.length + ' files selected';
                     document.getElementById("filename").innerText = label;
@@ -442,7 +527,12 @@ function createIndex(folderPath) {
                     let formData = new FormData();
                     for (let i = 0; i < files.length; i++) {
                         formData.append('filetoupload[]', files[i], files[i].name);
+                        if (keepRelativePath) {
+                            let relativePath = files[i].webkitRelativePath || files[i].name;
+                            formData.append('relativePaths[]', relativePath);
+                        }
                     }
+                    formData.append('currentDir', CURRENT_DIR);
                     fetch('/upload', {
                         method: 'POST',
                         body: formData
@@ -459,7 +549,7 @@ function createIndex(folderPath) {
                 });
                 uploadWrap.addEventListener('drop', function (event) {
                     event.preventDefault();
-                    uploadFiles(event.dataTransfer.files);
+                    uploadFiles(event.dataTransfer.files, false);
                 });
                 var cacheNote = '';
                 onChangeNote(true);
@@ -509,7 +599,7 @@ function createIndex(folderPath) {
                 function Delete(filename){
                     console.log('delete ' + filename);
                     toast('Deleting... ' + filename);
-                    fetch('/delete/' + filename)
+                    fetch('/delete?path=' + encodeURIComponent(filename) + '&dir=' + encodeURIComponent(CURRENT_DIR))
                     .then(x => {
                         toast('Success', 200);
                         setTimeout(()=>location.reload(), 200);
@@ -520,7 +610,7 @@ function createIndex(folderPath) {
                 }
 
                 function copy(text) {
-                    text = text.replaceAll(' ', '%20');
+                    text = encodeURI(text);
                     text = 'http://' + location.host + '/' + text;
                     var input = document.createElement('input');
                     input.setAttribute('value', text);
@@ -542,7 +632,7 @@ function createIndex(folderPath) {
                     text = text.toLowerCase();
                     let tr = document.getElementsByTagName('tr');
                     for (let i=1; i<tr.length; i++){
-                        let filename = tr[i].cells[2].innerText.toLowerCase();
+                        let filename = tr[i].cells[3].innerText.toLowerCase();
                         tr[i].hidden =  !filename.includes(text);
                     }
                     toast('Filter ' + text, 1000);
@@ -570,7 +660,7 @@ function createIndex(folderPath) {
                 
             </script>
             `;
-        fs.writeFileSync(`${folderPath}/index.html`, html);
+        fs.writeFileSync(`${rootPath}/index.html`, html);
     } catch (err) {
         console.log(err);
     }
