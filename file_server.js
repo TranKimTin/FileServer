@@ -473,8 +473,10 @@ function createIndex(rootPath, currentDir = '') {
             </form>
             <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
             <button type="button" class="btn-copy" onclick="document.getElementById('folders').click()">Upload folder</button>
+            <button type="button" class="btn-copy" onclick="pasteClipboardImage()">Paste image from clipboard</button>
             <div>Current folder: <b>${currentPathLabel}</b></div>
             ${currentDir ? `<button type="button" class="btn-copy" onclick="location.href='/?dir=${encodeURIComponent(parentDir)}'">Up</button>` : ''}
+            <div>Tip: Nhấn <b>Ctrl+V</b> để dán ảnh trực tiếp vào trang khi đang focus.</div>
             </br>
             <div>Total : ${files.length} item</div>
             <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
@@ -551,6 +553,51 @@ function createIndex(rootPath, currentDir = '') {
                     event.preventDefault();
                     uploadFiles(event.dataTransfer.files, false);
                 });
+                document.addEventListener('paste', handlePasteEvent);
+
+                function handlePasteEvent(event) {
+                    if (!event.clipboardData) return;
+                    let items = Array.from(event.clipboardData.items || []);
+                    let imageItem = items.find(item => item.type.startsWith('image/'));
+                    if (!imageItem) return;
+                    let file = imageItem.getAsFile();
+                    if (!file) return;
+                    event.preventDefault();
+                    uploadFiles([file], false);
+                }
+
+                function pasteClipboardImage() {
+                    if (navigator.clipboard && navigator.clipboard.read) {
+                        navigator.clipboard.read().then(items => {
+                            for (let item of items) {
+                                let imageType = item.types.find(t => t.startsWith('image/'));
+                                if (!imageType) continue;
+                                item.getType(imageType).then(imageBlob => {
+                                    let file = new File([imageBlob], generateClipboardFilename(imageBlob.type), { type: imageBlob.type });
+                                    uploadFiles([file], false);
+                                });
+                                return;
+                            }
+                            toast('Không tìm thấy ảnh trong clipboard', 2000);
+                        }).catch(err => {
+                            console.log('clipboard read error', err);
+                            toast('Không thể đọc clipboard', 2000);
+                        });
+                    } else {
+                        toast('Nhấn Ctrl+V để dán ảnh từ clipboard', 2000);
+                    }
+                }
+
+                function generateClipboardFilename(mimeType) {
+                    let ext = 'png';
+                    if (mimeType) {
+                        const parts = mimeType.split('/');
+                        if (parts.length === 2) ext = parts[1];
+                    }
+                    if (ext === 'jpeg') ext = 'jpg';
+                    return 'clipboard_' + Date.now() + '.' + ext;
+                }
+
                 var cacheNote = '';
                 onChangeNote(true);
                 function onChangeNote(noUpdate){
@@ -666,8 +713,9 @@ function createIndex(rootPath, currentDir = '') {
     }
 }
 
-app.listen(8082, () => {
+const port = 8082;
+app.listen(port, () => {
     console.log(`\nStart server at: ${new Date()}
-                HTTP server is listening at: ${"localhost"}:${"80"}
+                HTTP server is listening at: ${"localhost"}:${port}
     `);
 });

@@ -204,10 +204,12 @@
             </form>
             <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
             <button type="button" class="btn-copy" onclick="document.getElementById('folders').click()">Upload folder</button>
+            <button type="button" class="btn-copy" onclick="pasteClipboardImage()">Paste image from clipboard</button>
             <div>Current folder: <b>/</b></div>
             
+            <div>Tip: Nhấn <b>Ctrl+V</b> để dán ảnh trực tiếp vào trang khi đang focus.</div>
             </br>
-            <div>Total : 3 item</div>
+            <div>Total : 0 item</div>
             <input type='text' placeholder='Search...' id='search' onchange="filter(this.value)" onkeyup="filter(this.value)">
             <table>
             <tr>
@@ -219,43 +221,14 @@
                 <th>Created date</th>
                 <th>Delete</th>
             </tr>
-            <tr>
-                                    <td>0</td>
-                                    <td>-</td>
-                                    <td>Folder</td>
-                                    <td><a href='/?dir=MyHouse'>MyHouse</a></td>
-                                    <td>-</td>
-                                    <td>12/05/2026 22:49:37</td>
-                                    <td><div onClick='Delete("MyHouse")' class='remove'>Xóa</div></td>
-                                </tr> 
-                    
-<tr>
-                                    <td>1</td>
-                                    <td><button class='btn-copy' onclick='copy("one.txt")'>Copy</button></td>
-                                    <td>File</td>
-                                    <td><a href='/one.txt' download='one.txt'>one.txt</a></td>
-                                    <td>7 B</td>
-                                    <td>12/05/2026 22:35:50</td>
-                                    <td><div onClick='Delete("one.txt")' class='remove'>Xóa</div></td>
-                                </tr> 
-                    
-<tr>
-                                    <td>2</td>
-                                    <td><button class='btn-copy' onclick='copy("two.txt")'>Copy</button></td>
-                                    <td>File</td>
-                                    <td><a href='/two.txt' download='two.txt'>two.txt</a></td>
-                                    <td>7 B</td>
-                                    <td>12/05/2026 22:35:50</td>
-                                    <td><div onClick='Delete("two.txt")' class='remove'>Xóa</div></td>
-                                </tr> 
-                    
+            
             </table>
 
             </br>
             <div>Share text, code thì paste xuống dưới này</div>
             <span>Note id </span> <input type='number' value='1' id='notes' min='1' onchange="getNotes(this.value)">
             <button onclick="copyNote()">Copy</button>
-            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'></textarea>
+            <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>https://www.hackerrank.com/contests/spct2024batch-3-pretest-4/challenges/100000-tons-of-gold/problem</textarea>
             <div id="snackbar">Some text some message..</div>
             <script>
                 const CURRENT_DIR = "";
@@ -300,6 +273,51 @@
                     event.preventDefault();
                     uploadFiles(event.dataTransfer.files, false);
                 });
+                document.addEventListener('paste', handlePasteEvent);
+
+                function handlePasteEvent(event) {
+                    if (!event.clipboardData) return;
+                    let items = Array.from(event.clipboardData.items || []);
+                    let imageItem = items.find(item => item.type.startsWith('image/'));
+                    if (!imageItem) return;
+                    let file = imageItem.getAsFile();
+                    if (!file) return;
+                    event.preventDefault();
+                    uploadFiles([file], false);
+                }
+
+                function pasteClipboardImage() {
+                    if (navigator.clipboard && navigator.clipboard.read) {
+                        navigator.clipboard.read().then(items => {
+                            for (let item of items) {
+                                let imageType = item.types.find(t => t.startsWith('image/'));
+                                if (!imageType) continue;
+                                item.getType(imageType).then(imageBlob => {
+                                    let file = new File([imageBlob], generateClipboardFilename(imageBlob.type), { type: imageBlob.type });
+                                    uploadFiles([file], false);
+                                });
+                                return;
+                            }
+                            toast('Không tìm thấy ảnh trong clipboard', 2000);
+                        }).catch(err => {
+                            console.log('clipboard read error', err);
+                            toast('Không thể đọc clipboard', 2000);
+                        });
+                    } else {
+                        toast('Nhấn Ctrl+V để dán ảnh từ clipboard', 2000);
+                    }
+                }
+
+                function generateClipboardFilename(mimeType) {
+                    let ext = 'png';
+                    if (mimeType) {
+                        const parts = mimeType.split('/');
+                        if (parts.length === 2) ext = parts[1];
+                    }
+                    if (ext === 'jpeg') ext = 'jpg';
+                    return 'clipboard_' + Date.now() + '.' + ext;
+                }
+
                 var cacheNote = '';
                 onChangeNote(true);
                 function onChangeNote(noUpdate){
