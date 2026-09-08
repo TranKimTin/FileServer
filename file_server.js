@@ -186,25 +186,16 @@ function createIndex(rootDir, currentDir = "") {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>File Server</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f4f6f8; margin: 20px; color: #333; }
-        .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .image-upload-wrap { border: 3px dashed #1FB264; border-radius: 8px; position: relative; padding: 30px 20px; text-align: center; background: #fafdfb; cursor: pointer; transition: all .2s; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f0f2f5; margin: 0; padding: 15px 25px; color: #333; }
         .container { width: 100%; max-width: 100%; box-sizing: border-box; background: #fff; padding: 20px 25px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
         .image-upload-wrap { border: 2px dashed #1FB264; border-radius: 8px; position: relative; padding: 20px; text-align: center; background: #fafdfb; cursor: pointer; transition: all .2s; }
         .image-upload-wrap:hover, .image-upload-wrap.image-dropping { background-color: #eafaf1; border-color: #15824B; }
         .file-upload-input { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
-        .drag-text h3 { margin: 0; color: #15824B; font-size: 18px; font-weight: 600; }
-        .controls-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 20px 0 15px 0; }
         .drag-text h3 { margin: 0; color: #15824B; font-size: 16px; font-weight: 600; }
         .controls-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 15px 0 12px 0; }
         .nav-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-        #search { padding: 8px 14px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 280px; outline: none; }
         #search { padding: 8px 14px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 300px; outline: none; }
         #search:focus { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.25); }
-        table { border-collapse: collapse; width: 100%; margin-top: 10px; background: #fff; }
-        th, td { border: 1px solid #e9ecef; padding: 10px 12px; text-align: left; font-size: 14px; }
-        th { background-color: #f8f9fa; font-weight: 600; color: #495057; }
         table { border-collapse: collapse; width: 100%; margin-top: 5px; background: #fff; }
         th, td { border: 1px solid #e9ecef; padding: 9px 12px; text-align: left; font-size: 14px; }
         th { background-color: #f8f9fa; font-weight: 600; color: #495057; white-space: nowrap; }
@@ -267,20 +258,13 @@ function createIndex(rootDir, currentDir = "") {
         <table>
             <thead>
                 <tr>
-                    <th style="width: 35px; text-align: center;">
                     <th style="width: 38px; text-align: center;">
                         <input type="checkbox" id="check-all" class="file-checkbox" onclick="toggleSelectAll(this)" title="Chọn tất cả">
                     </th>
-                    <th style="width: 35px; text-align: center;">#</th>
-                    <th style="width: 60px;">Link</th>
-                    <th>Loại</th>
                     <th style="width: 45px; text-align: center;">#</th>
                     <th style="width: 70px; text-align: center;">Link</th>
                     <th style="width: 75px;">Loại</th>
                     <th>Tên</th>
-                    <th>Kích thước</th>
-                    <th>Ngày sửa đổi</th>
-                    <th style="width: 60px; text-align: center;">Xóa</th>
                     <th style="width: 100px; white-space: nowrap;">Kích thước</th>
                     <th style="width: 170px; white-space: nowrap;">Ngày sửa đổi</th>
                     <th style="width: 70px; text-align: center;">Xóa</th>
@@ -293,19 +277,15 @@ function createIndex(rootDir, currentDir = "") {
                             <input type="checkbox" class="file-checkbox row-checkbox" data-path="${encodeURIComponent(item.path)}" onchange="onRowCheckboxChange()">
                         </td>
                         <td style="text-align: center;">${index + 1}</td>
-                        <td>
                         <td style="text-align: center;">
                             ${item.isDir ? "-" : `<button type="button" class="btn btn-primary" style="padding: 2px 8px; font-size: 12px;" data-path="${encodeURIComponent(item.path)}" onclick="copy(decodeURIComponent(this.getAttribute('data-path')))">Copy</button>`}
                         </td>
                         <td>${item.isDir ? "Folder" : "File"}</td>
-                        <td>
                         <td style="word-break: break-word;">
                             ${item.isDir 
                                 ? `<a href="/?dir=${encodeURIComponent(item.path)}" style="font-weight: 600; text-decoration: none; color: #0d6efd;">📁 ${escapeHtml(item.name)}</a>`
                                 : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" style="text-decoration: none; color: #212529;">📄 ${escapeHtml(item.name)}</a>`}
                         </td>
-                        <td>${escapeHtml(item.size)}</td>
-                        <td>${moment(item.time).format("DD/MM/YYYY HH:mm:ss")}</td>
                         <td style="white-space: nowrap;">${escapeHtml(item.size)}</td>
                         <td style="white-space: nowrap;">${moment(item.time).format("DD/MM/YYYY HH:mm:ss")}</td>
                         <td style="text-align: center;">
