@@ -100,7 +100,6 @@ function formatFileSize(size) {
     return gb.toFixed(1) + " GB";
 }
 
-function getSortedFiles(dir, rootDir, currentDir) {
 function getFileExtension(filename) {
     const ext = path.extname(filename || "").toLowerCase();
     return ext ? ext.replace(".", "") : "";
@@ -121,16 +120,12 @@ function isPreviewable(ext) {
 async function getSortedFiles(dir, rootDir, currentDir) {
     let entries = [];
     try {
-        entries = fs.readdirSync(dir, { withFileTypes: true });
         entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (err) {
-        console.error("readdirSync error:", err.message);
         console.error("readdir error:", err.message);
         return [];
     }
 
-    let files = [];
-    for (let entry of entries) {
     const filePromises = entries.map(async (entry) => {
         try {
             let fullPath = path.join(dir, entry.name);
@@ -141,35 +136,28 @@ async function getSortedFiles(dir, rootDir, currentDir) {
             let size = "-";
             let isDirectory = entry.isDirectory();
             try {
-                let f = fs.statSync(fullPath);
                 let f = await fs.promises.stat(fullPath);
                 mtime = f.mtime.getTime();
-                size = entry.isDirectory() ? "-" : formatFileSize(f.size);
                 rawSize = isDirectory ? 0 : f.size;
                 size = isDirectory ? "-" : formatFileSize(f.size);
             } catch (statErr) {
-                console.warn(`statSync error for ${fullPath}:`, statErr.message);
                 console.warn(`stat error for ${fullPath}:`, statErr.message);
             }
-            files.push({
             let ext = isDirectory ? "folder" : getFileExtension(entry.name);
             return {
                 name: entry.name,
                 path: relativePath,
-                isDir: entry.isDirectory(),
                 isDir: isDirectory,
                 ext: ext,
                 previewable: !isDirectory && isPreviewable(ext),
                 time: mtime,
                 rawSize: rawSize,
                 size: size
-            });
             };
         } catch (itemErr) {
             console.warn("Error processing item in getSortedFiles:", itemErr.message);
             return null;
         }
-    }
     });
 
     let files = (await Promise.all(filePromises)).filter(Boolean);
@@ -188,34 +176,24 @@ async function getSortedFiles(dir, rootDir, currentDir) {
     return files;
 }
 
-function getnote(id) {
 async function getnote(id) {
     if (!/^\d+$/.test(String(id))) return "";
     let noteFilePath = path.join(publicRoot, "note", `note_${id}.txt`);
-    if (!fs.existsSync(noteFilePath)) return "";
     try {
-        return fs.readFileSync(noteFilePath, "utf8");
         return await fs.promises.readFile(noteFilePath, "utf8");
     } catch (e) {
-        console.error("Error reading note file:", e.message);
         return "";
     }
 }
 
 
 // 3. Render giao dien Web HTML
-function createIndex(rootDir, currentDir = "") {
 async function createIndex(rootDir, currentDir = "") {
     try {
         const target = currentDir ? resolvePathInPublic(currentDir) : { safePath: "", absolutePath: rootDir };
-        if (!target || !fs.existsSync(target.absolutePath)) {
-            return "<h1>Thu muc khong ton tai</h1>";
         if (!target) {
             return "<h1>Thư mục không tồn tại</h1>";
         }
-        let files = getSortedFiles(target.absolutePath, rootDir, currentDir);
-        let note = getnote(1);
-        let currentPathLabel = currentDir ? "/" + currentDir : "/";
         try {
             const st = await fs.promises.stat(target.absolutePath);
             if (!st.isDirectory()) return "<h1>Đường dẫn không phải là thư mục</h1>";
@@ -228,9 +206,6 @@ async function createIndex(rootDir, currentDir = "") {
         let parentDir = "";
         let breadcrumbHtml = `<a href="/" class="breadcrumb-link">🏠 Trang chủ</a>`;
         if (currentDir) {
-            const chunks = currentDir.split("/");
-            chunks.pop();
-            parentDir = chunks.join("/");
             const chunks = currentDir.split("/").filter(Boolean);
             if (chunks.length > 1) {
                 parentDir = chunks.slice(0, -1).join("/");
@@ -272,7 +247,6 @@ async function createIndex(rootDir, currentDir = "") {
 
         table { border-collapse: collapse; width: 100%; margin-top: 5px; background: #fff; }
         th, td { border: 1px solid #e9ecef; padding: 9px 12px; text-align: left; font-size: 14px; }
-        th { background-color: #f8f9fa; font-weight: 600; color: #495057; white-space: nowrap; }
         th { background-color: #f8f9fa; font-weight: 600; color: #495057; white-space: nowrap; user-select: none; }
         th.sortable { cursor: pointer; }
         th.sortable:hover { background-color: #e9ecef; }
@@ -286,8 +260,6 @@ async function createIndex(rootDir, currentDir = "") {
         .btn-danger { color: #fff; background-color: #dc3545; border-color: #dc3545; }
         .btn-danger:hover { background-color: #bb2d3b; }
         .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
-        .remove-link { color: #dc3545; cursor: pointer; font-weight: 600; text-decoration: none; }
-        .remove-link:hover { text-decoration: underline; }
         .btn-action { background: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; padding: 3px 7px; font-size: 12px; cursor: pointer; color: #495057; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: all .15s; }
         .btn-action:hover { background: #e9ecef; border-color: #adb5bd; }
         .remove-link { color: #dc3545; cursor: pointer; font-size: 14px; padding: 2px 5px; border-radius: 4px; transition: background .15s; }
@@ -332,7 +304,6 @@ async function createIndex(rootDir, currentDir = "") {
         <div class="controls-row">
             <div class="nav-actions">
                 <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
-                <button type="button" class="btn btn-primary" onclick="document.getElementById('folders').click()">📁 Upload Folder</button>
                 <button type="button" class="btn btn-primary" onclick="promptCreateFolder()">➕ Tạo thư mục</button>
                 <button type="button" class="btn btn-primary" onclick="document.getElementById('folders').click()">📁 Upload Thư mục</button>
                 <button type="button" class="btn btn-primary" onclick="pasteClipboardImage()">📋 Dán ảnh từ Clipboard</button>
@@ -343,12 +314,9 @@ async function createIndex(rootDir, currentDir = "") {
             </div>
         </div>
 
-        <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6;">
-            <div>Thư mục hiện tại: <b>${escapeHtml(currentPathLabel)}</b></div>
         <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6;">
             <div class="breadcrumb-nav">${breadcrumbHtml}</div>
             <div style="display: flex; align-items: center; gap: 12px;">
-                <div>Tổng số: <b>${files.length}</b> mục</div>
                 <div>Tổng số: <b id="total-count">${files.length}</b> mục</div>
                 <span id="selected-info" style="display: none; font-weight: bold; color: #0d6efd; background: #e7f1ff; padding: 4px 10px; border-radius: 4px;">| Đã chọn: <span id="selected-count">0</span></span>
                 <button type="button" id="btn-delete-selected" class="btn btn-danger" style="display: none; font-weight: bold; padding: 6px 14px; box-shadow: 0 2px 4px rgba(220,53,69,0.25);" onclick="deleteSelected()">
@@ -364,12 +332,6 @@ async function createIndex(rootDir, currentDir = "") {
                         <input type="checkbox" id="check-all" class="file-checkbox" onclick="toggleSelectAll(this)" title="Chọn tất cả">
                     </th>
                     <th style="width: 45px; text-align: center;">#</th>
-                    <th style="width: 70px; text-align: center;">Link</th>
-                    <th style="width: 75px;">Loại</th>
-                    <th>Tên</th>
-                    <th style="width: 100px; white-space: nowrap;">Kích thước</th>
-                    <th style="width: 170px; white-space: nowrap;">Ngày sửa đổi</th>
-                    <th style="width: 70px; text-align: center;">Xóa</th>
                     <th style="width: 75px;" class="sortable" data-col="ext" onclick="sortTable('ext')" title="Nhấn để sắp xếp theo Loại">
                         Loại <span class="sort-indicator">↕</span>
                     </th>
@@ -387,7 +349,6 @@ async function createIndex(rootDir, currentDir = "") {
             </thead>
             <tbody>
                 ${files.map((item, index) => `
-                    <tr class="file-row" data-name="${escapeHtml(item.name)}">
                     <tr class="file-row" 
                         data-name="${escapeHtml(item.name)}" 
                         data-is-dir="${item.isDir ? 1 : 0}"
@@ -397,18 +358,13 @@ async function createIndex(rootDir, currentDir = "") {
                         <td style="text-align: center;">
                             <input type="checkbox" class="file-checkbox row-checkbox" data-path="${encodeURIComponent(item.path)}" onchange="onRowCheckboxChange()">
                         </td>
-                        <td style="text-align: center;">${index + 1}</td>
-                        <td style="text-align: center;">
-                            ${item.isDir ? "-" : `<button type="button" class="btn btn-primary" style="padding: 2px 8px; font-size: 12px;" data-path="${encodeURIComponent(item.path)}" onclick="copy(decodeURIComponent(this.getAttribute('data-path')))">Copy</button>`}
                         <td style="text-align: center;" class="row-index">${index + 1}</td>
                         <td style="text-align: left;">
                             ${item.isDir ? '<span class="badge badge-dir">Folder</span>' : `<span class="badge badge-file">${escapeHtml(item.ext.toUpperCase() || 'FILE')}</span>`}
                         </td>
-                        <td>${item.isDir ? "Folder" : "File"}</td>
                         <td style="word-break: break-word;">
                             ${item.isDir 
                                 ? `<a href="/?dir=${encodeURIComponent(item.path)}" style="font-weight: 600; text-decoration: none; color: #0d6efd;">📁 ${escapeHtml(item.name)}</a>`
-                                : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" style="text-decoration: none; color: #212529;">📄 ${escapeHtml(item.name)}</a>`}
                                 : (item.previewable 
                                     ? `<a href="javascript:void(0)" onclick="previewFile('${encodeURIComponent(item.path)}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')" style="text-decoration: none; color: #212529; font-weight: 500;" title="Nhấn để xem trước">📄 ${escapeHtml(item.name)}</a>`
                                     : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" style="text-decoration: none; color: #212529;" title="Nhấn để tải về">📄 ${escapeHtml(item.name)}</a>`
@@ -417,8 +373,6 @@ async function createIndex(rootDir, currentDir = "") {
                         </td>
                         <td style="white-space: nowrap;">${escapeHtml(item.size)}</td>
                         <td style="white-space: nowrap;">${moment(item.time).format("DD/MM/YYYY HH:mm:ss")}</td>
-                        <td style="text-align: center;">
-                            <span class="remove-link" data-path="${encodeURIComponent(item.path)}" onclick="deleteSingle(decodeURIComponent(this.getAttribute('data-path')))">Xóa</span>
                         <td style="text-align: center; white-space: nowrap;">
                             <div style="display: inline-flex; align-items: center; gap: 6px;">
                                 ${item.isDir ? "" : `<button type="button" class="btn-action" title="Sao chép liên kết tải" data-path="${encodeURIComponent(item.path)}" onclick="copy(decodeURIComponent(this.getAttribute('data-path')))">🔗</button>`}
@@ -429,7 +383,6 @@ async function createIndex(rootDir, currentDir = "") {
                         </td>
                     </tr>
                 `).join("\n")}
-                ${files.length === 0 ? `<tr><td colspan="8" style="text-align: center; color: #6c757d; padding: 25px;">Thư mục trống</td></tr>` : ""}
                 ${files.length === 0 ? `<tr><td colspan="7" style="text-align: center; color: #6c757d; padding: 25px;">Thư mục trống</td></tr>` : ""}
             </tbody>
         </table>
@@ -966,7 +919,6 @@ async function createIndex(rootDir, currentDir = "") {
 
 // 4. Cac Endpoints API
 
-app.get("/", function (req, res) {
 app.get("/index.html", (req, res) => res.redirect("/"));
 
 app.get("/", async function (req, res) {
@@ -974,7 +926,6 @@ app.get("/", async function (req, res) {
         let dir = sanitizeRelativePath(req.query.dir || "", "") || "";
         if (dir) {
             const target = resolvePathInPublic(dir);
-            if (!target || !fs.existsSync(target.absolutePath) || !fs.statSync(target.absolutePath).isDirectory()) {
             if (!target) return res.redirect("/");
             try {
                 const stat = await fs.promises.stat(target.absolutePath);
@@ -983,7 +934,6 @@ app.get("/", async function (req, res) {
                 return res.redirect("/");
             }
         }
-        let html = createIndex(publicRoot, dir);
         let html = await createIndex(publicRoot, dir);
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.send(html);
@@ -993,7 +943,6 @@ app.get("/", async function (req, res) {
     }
 });
 
-app.post("/delete-multiple", (req, res) => {
 app.post("/create-folder", async (req, res) => {
     try {
         let name = (req.body && req.body.name ? String(req.body.name) : "").trim();
@@ -1043,8 +992,6 @@ app.post("/delete-multiple", async (req, res) => {
 
         for (let itemPath of rawPaths) {
             const target = resolvePathInPublic(itemPath);
-            if (!target || !fs.existsSync(target.absolutePath)) {
-                errors.push({ path: itemPath, error: "Mục không tồn tại" });
             if (!target) {
                 errors.push({ path: itemPath, error: "Đường dẫn không hợp lệ" });
                 continue;
@@ -1063,13 +1010,10 @@ app.post("/delete-multiple", async (req, res) => {
             }
 
             try {
-                if (fs.statSync(target.absolutePath).isDirectory()) {
-                    fs.rmSync(target.absolutePath, { recursive: true, force: true });
                 const stat = await fs.promises.stat(target.absolutePath);
                 if (stat.isDirectory()) {
                     await fs.promises.rm(target.absolutePath, { recursive: true, force: true });
                 } else {
-                    fs.unlinkSync(target.absolutePath);
                     await fs.promises.unlink(target.absolutePath);
                 }
                 deletedCount++;
@@ -1104,11 +1048,9 @@ app.post("/upload", (req, res) => {
             maxFiles: 1000
         });
 
-        form.parse(req, function (err, fields, files) {
         form.parse(req, async function (err, fields, files) {
             if (err) {
                 console.error("Formidable parse error:", err);
-                return res.status(500).json({ success: false, message: "Lỗi xử lý file upload" });
                 return res.status(500).json({ success: false, message: "Lỗi xử lý file upload: " + err.message });
             }
 
@@ -1137,29 +1079,22 @@ app.post("/upload", (req, res) => {
             for (let index = 0; index < uploadFiles.length; index++) {
                 let file = uploadFiles[index];
                 let originalName = (file.originalFilename || "").trim();
-                let filename = path.basename(originalName);
                 let cleanFilename = path.basename(originalName).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
                 let oldpath = file.filepath || file.path;
-                if (!filename || !oldpath) continue;
                 if (!cleanFilename || !oldpath) continue;
 
-                let clientRel = sanitizeRelativePath(relativePaths[index] || "", "") || filename;
                 let clientRel = sanitizeRelativePath(relativePaths[index] || "", "") || cleanFilename;
                 clientRel = clientRel.split("/").map(seg => seg.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")).join("/");
                 let relPath = currentDir ? `${currentDir}/${clientRel}` : clientRel;
-                const target = resolvePathInPublic(relPath, filename);
                 const target = resolvePathInPublic(relPath, cleanFilename);
 
                 if (!target || isSystemProtectedPath(target.safePath)) {
-                    try { if (fs.existsSync(oldpath)) fs.unlinkSync(oldpath); } catch (e) {}
                     try { await fs.promises.unlink(oldpath); } catch (e) {}
                     continue;
                 }
 
                 let newpath = target.absolutePath;
                 try {
-                    fs.mkdirSync(path.dirname(newpath), { recursive: true });
-                    fs.copyFileSync(oldpath, newpath);
                     await fs.promises.mkdir(path.dirname(newpath), { recursive: true });
                     try {
                         await fs.promises.rename(oldpath, newpath);
@@ -1172,10 +1107,6 @@ app.post("/upload", (req, res) => {
                         }
                     }
                     successCount++;
-                } catch (copyErr) {
-                    console.error(`Copy file error for ${newpath}:`, copyErr.message);
-                } finally {
-                    try { if (fs.existsSync(oldpath)) fs.unlinkSync(oldpath); } catch (e) {}
                 } catch (writeErr) {
                     console.error(`File write error for ${newpath}:`, writeErr.message);
                     errors.push({ name: cleanFilename, error: writeErr.message });
@@ -1183,7 +1114,6 @@ app.post("/upload", (req, res) => {
                 }
             }
 
-            res.json({ success: true, count: successCount });
             res.json({ success: true, count: successCount, errors });
         });
     } catch (err) {
@@ -1192,14 +1122,12 @@ app.post("/upload", (req, res) => {
     }
 });
 
-app.get("/getnote/:id", (req, res) => {
 app.get("/getnote/:id", async (req, res) => {
     try {
         let id = req.params.id;
         if (!/^\d+$/.test(id)) {
             return res.status(400).json({ error: "Invalid note ID" });
         }
-        let note = getnote(id);
         let note = await getnote(id);
         res.json({ text: note });
     } catch (err) {
@@ -1208,7 +1136,6 @@ app.get("/getnote/:id", async (req, res) => {
     }
 });
 
-app.post("/note/:id", (req, res) => {
 app.post("/note/:id", async (req, res) => {
     try {
         let id = req.params.id;
@@ -1217,7 +1144,6 @@ app.post("/note/:id", async (req, res) => {
         }
         let text = (req.body && req.body.data !== undefined) ? String(req.body.data) : "";
         let noteFilePath = path.join(publicRoot, "note", `note_${id}.txt`);
-        fs.writeFileSync(noteFilePath, text, "utf8");
         await fs.promises.writeFile(noteFilePath, text, "utf8");
         res.send("ok");
     } catch (err) {
@@ -1226,7 +1152,6 @@ app.post("/note/:id", async (req, res) => {
     }
 });
 
-const port = 8082;
 const port = process.env.PORT || 8082;
 app.listen(port, () => {
     console.log(`\nStart server at: ${new Date()}
