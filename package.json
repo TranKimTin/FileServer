@@ -1,9 +1,12 @@
 {
   "name": "file-server",
   "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
   "description": "Lightweight non-blocking file server with note sharing and directory browsing",
   "main": "file_server.js",
   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
     "start": "node file_server.js",
     "build": "pkg -t node18-win --public file_server.js",
     "test": "node -e \"console.log('OK')\""
@@ -11,7 +14,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^1.20.0",
     "cors": "^2.8.5",
+    "express": "^4.18.1",
+    "formidable": "^2.0.1",
+    "moment": "^2.29.3",
     "express": "^4.21.2",
     "formidable": "^2.1.2",
     "moment": "^2.30.1",
