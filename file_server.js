@@ -101,40 +101,78 @@ function formatFileSize(size) {
 }
 
 function getSortedFiles(dir, rootDir, currentDir) {
+function getFileExtension(filename) {
+    const ext = path.extname(filename || "").toLowerCase();
+    return ext ? ext.replace(".", "") : "";
+}
+
+function isPreviewable(ext) {
+    const previewExts = [
+        "jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "ico",
+        "mp4", "webm", "ogg",
+        "mp3", "wav", "m4a", "aac", "flac",
+        "pdf",
+        "txt", "log", "md", "json", "js", "ts", "html", "css", "py", "c", "cpp", "h", "hpp",
+        "sql", "sh", "bat", "cmd", "ps1", "yml", "yaml", "xml", "ini", "env", "csv"
+    ];
+    return previewExts.includes(ext);
+}
+
+async function getSortedFiles(dir, rootDir, currentDir) {
     let entries = [];
     try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch (err) {
         console.error("readdirSync error:", err.message);
+        console.error("readdir error:", err.message);
         return [];
     }
 
     let files = [];
     for (let entry of entries) {
+    const filePromises = entries.map(async (entry) => {
         try {
             let fullPath = path.join(dir, entry.name);
             let relativePath = path.relative(rootDir, fullPath).replace(/\\/g, "/");
             if (!relativePath) relativePath = entry.name;
             let mtime = 0;
+            let rawSize = 0;
             let size = "-";
+            let isDirectory = entry.isDirectory();
             try {
                 let f = fs.statSync(fullPath);
+                let f = await fs.promises.stat(fullPath);
                 mtime = f.mtime.getTime();
                 size = entry.isDirectory() ? "-" : formatFileSize(f.size);
+                rawSize = isDirectory ? 0 : f.size;
+                size = isDirectory ? "-" : formatFileSize(f.size);
             } catch (statErr) {
                 console.warn(`statSync error for ${fullPath}:`, statErr.message);
+                console.warn(`stat error for ${fullPath}:`, statErr.message);
             }
             files.push({
+            let ext = isDirectory ? "folder" : getFileExtension(entry.name);
+            return {
                 name: entry.name,
                 path: relativePath,
                 isDir: entry.isDirectory(),
+                isDir: isDirectory,
+                ext: ext,
+                previewable: !isDirectory && isPreviewable(ext),
                 time: mtime,
+                rawSize: rawSize,
                 size: size
             });
+            };
         } catch (itemErr) {
             console.warn("Error processing item in getSortedFiles:", itemErr.message);
+            return null;
         }
     }
+    });
+
+    let files = (await Promise.all(filePromises)).filter(Boolean);
 
     files = files.filter(item => {
         let lower = item.path.toLowerCase().replace(/[. ]+$/, "");
@@ -151,32 +189,61 @@ function getSortedFiles(dir, rootDir, currentDir) {
 }
 
 function getnote(id) {
+async function getnote(id) {
     if (!/^\d+$/.test(String(id))) return "";
     let noteFilePath = path.join(publicRoot, "note", `note_${id}.txt`);
     if (!fs.existsSync(noteFilePath)) return "";
     try {
         return fs.readFileSync(noteFilePath, "utf8");
+        return await fs.promises.readFile(noteFilePath, "utf8");
     } catch (e) {
         console.error("Error reading note file:", e.message);
         return "";
     }
 }
 
+
 // 3. Render giao dien Web HTML
 function createIndex(rootDir, currentDir = "") {
+async function createIndex(rootDir, currentDir = "") {
     try {
         const target = currentDir ? resolvePathInPublic(currentDir) : { safePath: "", absolutePath: rootDir };
         if (!target || !fs.existsSync(target.absolutePath)) {
             return "<h1>Thu muc khong ton tai</h1>";
+        if (!target) {
+            return "<h1>Thư mục không tồn tại</h1>";
         }
         let files = getSortedFiles(target.absolutePath, rootDir, currentDir);
         let note = getnote(1);
         let currentPathLabel = currentDir ? "/" + currentDir : "/";
+        try {
+            const st = await fs.promises.stat(target.absolutePath);
+            if (!st.isDirectory()) return "<h1>Đường dẫn không phải là thư mục</h1>";
+        } catch (e) {
+            return "<h1>Thư mục không tồn tại</h1>";
+        }
+
+        let files = await getSortedFiles(target.absolutePath, rootDir, currentDir);
+        let note = await getnote(1);
         let parentDir = "";
+        let breadcrumbHtml = `<a href="/" class="breadcrumb-link">🏠 Trang chủ</a>`;
         if (currentDir) {
             const chunks = currentDir.split("/");
             chunks.pop();
             parentDir = chunks.join("/");
+            const chunks = currentDir.split("/").filter(Boolean);
+            if (chunks.length > 1) {
+                parentDir = chunks.slice(0, -1).join("/");
+            }
+            let accumulated = "";
+            for (let i = 0; i < chunks.length; i++) {
+                accumulated = accumulated ? `${accumulated}/${chunks[i]}` : chunks[i];
+                if (i === chunks.length - 1) {
+                    breadcrumbHtml += ` <span class="breadcrumb-sep">/</span> <span class="breadcrumb-current">📁 ${escapeHtml(chunks[i])}</span>`;
+                } else {
+                    breadcrumbHtml += ` <span class="breadcrumb-sep">/</span> <a href="/?dir=${encodeURIComponent(accumulated)}" class="breadcrumb-link">📁 ${escapeHtml(chunks[i])}</a>`;
+                }
+            }
         }
 
         return `<!DOCTYPE html>
@@ -196,9 +263,20 @@ function createIndex(rootDir, currentDir = "") {
         .nav-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         #search { padding: 8px 14px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 300px; outline: none; }
         #search:focus { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.25); }
+        
+        .breadcrumb-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 14px; }
+        .breadcrumb-link { color: #0d6efd; text-decoration: none; font-weight: 600; padding: 3px 6px; border-radius: 4px; transition: background .15s; }
+        .breadcrumb-link:hover { background: #e7f1ff; text-decoration: underline; }
+        .breadcrumb-sep { color: #6c757d; font-weight: bold; }
+        .breadcrumb-current { color: #212529; font-weight: 600; padding: 3px 6px; }
+
         table { border-collapse: collapse; width: 100%; margin-top: 5px; background: #fff; }
         th, td { border: 1px solid #e9ecef; padding: 9px 12px; text-align: left; font-size: 14px; }
         th { background-color: #f8f9fa; font-weight: 600; color: #495057; white-space: nowrap; }
+        th { background-color: #f8f9fa; font-weight: 600; color: #495057; white-space: nowrap; user-select: none; }
+        th.sortable { cursor: pointer; }
+        th.sortable:hover { background-color: #e9ecef; }
+        .sort-indicator { font-size: 12px; color: #6c757d; margin-left: 4px; }
         tr:hover { background-color: #f8fbfd; }
         .selected-row { background-color: #e8f4fd !important; }
         .file-checkbox { width: 18px; height: 18px; cursor: pointer; margin: 0; vertical-align: middle; }
@@ -210,6 +288,14 @@ function createIndex(rootDir, currentDir = "") {
         .btn-danger:disabled { opacity: 0.6; cursor: not-allowed; }
         .remove-link { color: #dc3545; cursor: pointer; font-weight: 600; text-decoration: none; }
         .remove-link:hover { text-decoration: underline; }
+        .btn-action { background: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; padding: 3px 7px; font-size: 12px; cursor: pointer; color: #495057; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; transition: all .15s; }
+        .btn-action:hover { background: #e9ecef; border-color: #adb5bd; }
+        .remove-link { color: #dc3545; cursor: pointer; font-size: 14px; padding: 2px 5px; border-radius: 4px; transition: background .15s; }
+        .remove-link:hover { background: #f8d7da; }
+        .badge { display: inline-block; padding: 3px 7px; font-size: 11px; font-weight: 700; border-radius: 4px; text-transform: uppercase; }
+        .badge-dir { background: #e7f1ff; color: #0d6efd; }
+        .badge-file { background: #f1f3f5; color: #495057; }
+        
         .note-section { margin-top: 30px; border-top: 2px solid #e9ecef; padding-top: 20px; }
         #note { width: 100%; height: 35vh; box-sizing: border-box; padding: 12px; font-family: Consolas, monospace; font-size: 14px; border: 1px solid #ced4da; border-radius: 4px; resize: vertical; outline: none; }
         #note:focus { border-color: #0d6efd; box-shadow: 0 0 0 2px rgba(13,110,253,0.25); }
@@ -217,6 +303,17 @@ function createIndex(rootDir, currentDir = "") {
         #snackbar.show { visibility: visible; }
         .loader { border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top: 2px solid #ffffff; width: 14px; height: 14px; animation: spin 1s linear infinite; display: inline-block; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Modal Preview */
+        .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .modal-content { background: #fff; border-radius: 8px; max-width: 90vw; max-height: 90vh; width: 900px; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.35); overflow: hidden; }
+        .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid #dee2e6; background: #f8f9fa; }
+        .modal-body { padding: 15px; overflow: auto; max-height: calc(90vh - 65px); display: flex; justify-content: center; align-items: center; background: #fdfdfd; }
+        .modal-body img { max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .modal-body video { max-width: 100%; max-height: 75vh; border-radius: 4px; }
+        .modal-body audio { width: 100%; margin: 20px 0; }
+        .modal-body iframe { width: 100%; height: 75vh; border: none; border-radius: 4px; }
+        .modal-body pre { width: 100%; max-height: 75vh; margin: 0; padding: 15px; background: #1e1e1e; color: #d4d4d4; border-radius: 6px; overflow: auto; font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     </style>
 </head>
 <body>
@@ -236,6 +333,8 @@ function createIndex(rootDir, currentDir = "") {
             <div class="nav-actions">
                 <input id="folders" type="file" style="display:none" onchange="onUploadFolder(this)" webkitdirectory directory multiple>
                 <button type="button" class="btn btn-primary" onclick="document.getElementById('folders').click()">📁 Upload Folder</button>
+                <button type="button" class="btn btn-primary" onclick="promptCreateFolder()">➕ Tạo thư mục</button>
+                <button type="button" class="btn btn-primary" onclick="document.getElementById('folders').click()">📁 Upload Thư mục</button>
                 <button type="button" class="btn btn-primary" onclick="pasteClipboardImage()">📋 Dán ảnh từ Clipboard</button>
                 ${currentDir ? `<button type="button" class="btn btn-primary" onclick="location.href='/?dir=${encodeURIComponent(parentDir)}'">⬆️ Lên thư mục cha</button>` : ""}
             </div>
@@ -246,8 +345,11 @@ function createIndex(rootDir, currentDir = "") {
 
         <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6;">
             <div>Thư mục hiện tại: <b>${escapeHtml(currentPathLabel)}</b></div>
+        <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6;">
+            <div class="breadcrumb-nav">${breadcrumbHtml}</div>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div>Tổng số: <b>${files.length}</b> mục</div>
+                <div>Tổng số: <b id="total-count">${files.length}</b> mục</div>
                 <span id="selected-info" style="display: none; font-weight: bold; color: #0d6efd; background: #e7f1ff; padding: 4px 10px; border-radius: 4px;">| Đã chọn: <span id="selected-count">0</span></span>
                 <button type="button" id="btn-delete-selected" class="btn btn-danger" style="display: none; font-weight: bold; padding: 6px 14px; box-shadow: 0 2px 4px rgba(220,53,69,0.25);" onclick="deleteSelected()">
                     🗑️ Xóa đã chọn (<span id="btn-delete-count">0</span>)
@@ -268,32 +370,67 @@ function createIndex(rootDir, currentDir = "") {
                     <th style="width: 100px; white-space: nowrap;">Kích thước</th>
                     <th style="width: 170px; white-space: nowrap;">Ngày sửa đổi</th>
                     <th style="width: 70px; text-align: center;">Xóa</th>
+                    <th style="width: 75px;" class="sortable" data-col="ext" onclick="sortTable('ext')" title="Nhấn để sắp xếp theo Loại">
+                        Loại <span class="sort-indicator">↕</span>
+                    </th>
+                    <th class="sortable" data-col="name" onclick="sortTable('name')" title="Nhấn để sắp xếp theo Tên">
+                        Tên <span class="sort-indicator">↕</span>
+                    </th>
+                    <th style="width: 110px; white-space: nowrap;" class="sortable" data-col="size" onclick="sortTable('size')" title="Nhấn để sắp xếp theo Kích thước">
+                        Kích thước <span class="sort-indicator">↕</span>
+                    </th>
+                    <th style="width: 175px; white-space: nowrap;" class="sortable" data-col="time" onclick="sortTable('time')" title="Nhấn để sắp xếp theo Ngày sửa đổi">
+                        Ngày sửa đổi <span class="sort-indicator">↕</span>
+                    </th>
+                    <th style="width: 120px; text-align: center;">Thao tác</th>
                 </tr>
             </thead>
             <tbody>
                 ${files.map((item, index) => `
                     <tr class="file-row" data-name="${escapeHtml(item.name)}">
+                    <tr class="file-row" 
+                        data-name="${escapeHtml(item.name)}" 
+                        data-is-dir="${item.isDir ? 1 : 0}"
+                        data-ext="${escapeHtml(item.ext)}"
+                        data-size="${item.rawSize}"
+                        data-time="${item.time}">
                         <td style="text-align: center;">
                             <input type="checkbox" class="file-checkbox row-checkbox" data-path="${encodeURIComponent(item.path)}" onchange="onRowCheckboxChange()">
                         </td>
                         <td style="text-align: center;">${index + 1}</td>
                         <td style="text-align: center;">
                             ${item.isDir ? "-" : `<button type="button" class="btn btn-primary" style="padding: 2px 8px; font-size: 12px;" data-path="${encodeURIComponent(item.path)}" onclick="copy(decodeURIComponent(this.getAttribute('data-path')))">Copy</button>`}
+                        <td style="text-align: center;" class="row-index">${index + 1}</td>
+                        <td style="text-align: left;">
+                            ${item.isDir ? '<span class="badge badge-dir">Folder</span>' : `<span class="badge badge-file">${escapeHtml(item.ext.toUpperCase() || 'FILE')}</span>`}
                         </td>
                         <td>${item.isDir ? "Folder" : "File"}</td>
                         <td style="word-break: break-word;">
                             ${item.isDir 
                                 ? `<a href="/?dir=${encodeURIComponent(item.path)}" style="font-weight: 600; text-decoration: none; color: #0d6efd;">📁 ${escapeHtml(item.name)}</a>`
                                 : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" style="text-decoration: none; color: #212529;">📄 ${escapeHtml(item.name)}</a>`}
+                                : (item.previewable 
+                                    ? `<a href="javascript:void(0)" onclick="previewFile('${encodeURIComponent(item.path)}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')" style="text-decoration: none; color: #212529; font-weight: 500;" title="Nhấn để xem trước">📄 ${escapeHtml(item.name)}</a>`
+                                    : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" style="text-decoration: none; color: #212529;" title="Nhấn để tải về">📄 ${escapeHtml(item.name)}</a>`
+                                )
+                            }
                         </td>
                         <td style="white-space: nowrap;">${escapeHtml(item.size)}</td>
                         <td style="white-space: nowrap;">${moment(item.time).format("DD/MM/YYYY HH:mm:ss")}</td>
                         <td style="text-align: center;">
                             <span class="remove-link" data-path="${encodeURIComponent(item.path)}" onclick="deleteSingle(decodeURIComponent(this.getAttribute('data-path')))">Xóa</span>
+                        <td style="text-align: center; white-space: nowrap;">
+                            <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                ${item.isDir ? "" : `<button type="button" class="btn-action" title="Sao chép liên kết tải" data-path="${encodeURIComponent(item.path)}" onclick="copy(decodeURIComponent(this.getAttribute('data-path')))">🔗</button>`}
+                                ${item.previewable ? `<button type="button" class="btn-action" title="Xem trước file" onclick="previewFile('${encodeURIComponent(item.path)}', '${escapeHtml(item.name).replace(/'/g, "\\'")}')">👁️</button>` : ""}
+                                ${item.isDir ? "" : `<a href="/${safeUrlPath(item.path)}" download="${escapeHtml(item.name)}" class="btn-action" style="text-decoration:none;" title="Tải xuống">⬇️</a>`}
+                                <span class="remove-link" title="Xóa mục này" data-path="${encodeURIComponent(item.path)}" onclick="deleteSingle(decodeURIComponent(this.getAttribute('data-path')))">🗑️</span>
+                            </div>
                         </td>
                     </tr>
                 `).join("\n")}
                 ${files.length === 0 ? `<tr><td colspan="8" style="text-align: center; color: #6c757d; padding: 25px;">Thư mục trống</td></tr>` : ""}
+                ${files.length === 0 ? `<tr><td colspan="7" style="text-align: center; color: #6c757d; padding: 25px;">Thư mục trống</td></tr>` : ""}
             </tbody>
         </table>
 
@@ -305,6 +442,20 @@ function createIndex(rootDir, currentDir = "") {
                 <button type="button" class="btn btn-primary" onclick="copyNoteLink()">Copy Link Note</button>
             </div>
             <textarea id="note" oninput="onChangeNote()">${escapeHtml(note)}</textarea>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="modal-backdrop" style="display: none;" onclick="closePreviewOnBackdrop(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title" style="margin: 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70%;">Xem trước</h3>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <a id="modal-download-btn" href="#" download class="btn btn-primary" style="padding: 4px 10px; font-size: 12px; text-decoration: none;">⬇️ Tải xuống</a>
+                    <button type="button" class="btn-action" onclick="closePreview()" style="font-size: 16px; padding: 3px 8px; cursor: pointer; border: none; background: transparent;">✕</button>
+                </div>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
         </div>
     </div>
 
@@ -325,6 +476,8 @@ function createIndex(rootDir, currentDir = "") {
         let toastTimer = null;
         let noteTimer = null;
         let cacheNote = document.getElementById('note').value;
+        let currentSortCol = '';
+        let currentSortAsc = true;
 
         function toast(mess, timeout = 99999) {
             const tag = document.getElementById("snackbar");
@@ -456,6 +609,165 @@ function createIndex(rootDir, currentDir = "") {
             const url = location.protocol + '//' + location.host + '/note/note_' + encodeURIComponent(id) + '.txt';
             navigator.clipboard.writeText(url).then(() => {
                 toast('Đã sao chép link note', 1000);
+            });
+        }
+
+        function promptCreateFolder() {
+            const name = prompt('Nhập tên thư mục mới:');
+            if (!name || !name.trim()) return;
+            toast('Đang tạo thư mục...');
+            fetch('/create-folder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name.trim(), currentDir: CURRENT_DIR })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    toast('Đã tạo thư mục thành công!', 800);
+                    setTimeout(() => location.reload(), 400);
+                } else {
+                    alert('Lỗi tạo thư mục: ' + (data.message || 'Thất bại'));
+                }
+            })
+            .catch(err => {
+                console.error('Create folder error:', err);
+                toast('Lỗi kết nối máy chủ', 2000);
+            });
+        }
+
+        function escapeHtmlClient(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function previewFile(relPath, fileName) {
+            const decodedPath = decodeURIComponent(relPath);
+            const encoded = safeEncodePath(decodedPath);
+            const url = '/' + encoded;
+            const ext = (fileName.split('.').pop() || '').toLowerCase();
+            const modal = document.getElementById('preview-modal');
+            const title = document.getElementById('modal-title');
+            const body = document.getElementById('modal-body');
+            const dlBtn = document.getElementById('modal-download-btn');
+
+            title.textContent = fileName;
+            dlBtn.href = url;
+            dlBtn.download = fileName;
+            body.innerHTML = '<div class="loader" style="width: 24px; height: 24px; border-width: 3px; border-top-color: #0d6efd;"></div>';
+            modal.style.display = 'flex';
+
+            const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+            const videoExts = ['mp4', 'webm', 'ogg'];
+            const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+            const textExts = [
+                'txt', 'log', 'md', 'json', 'js', 'ts', 'html', 'css', 'py', 'c', 'cpp', 'h', 'hpp', 
+                'sql', 'sh', 'bat', 'cmd', 'ps1', 'yml', 'yaml', 'xml', 'ini', 'env', 'csv'
+            ];
+
+            if (imageExts.includes(ext)) {
+                body.innerHTML = '<img src="' + url + '" alt="' + escapeHtmlClient(fileName) + '">';
+            } else if (videoExts.includes(ext)) {
+                body.innerHTML = '<video src="' + url + '" controls autoplay></video>';
+            } else if (audioExts.includes(ext)) {
+                body.innerHTML = '<audio src="' + url + '" controls autoplay></audio>';
+            } else if (ext === 'pdf') {
+                body.innerHTML = '<iframe src="' + url + '"></iframe>';
+            } else if (textExts.includes(ext)) {
+                fetch(url)
+                    .then(r => r.text())
+                    .then(txt => {
+                        body.innerHTML = '<pre><code>' + escapeHtmlClient(txt) + '</code></pre>';
+                    })
+                    .catch(err => {
+                        body.innerHTML = '<div style="color: #dc3545;">Lỗi khi đọc file: ' + escapeHtmlClient(err.message) + '</div>';
+                    });
+            } else {
+                body.innerHTML = '<div>Định dạng không hỗ trợ xem trước. Vui lòng tải xuống để xem.</div>';
+            }
+        }
+
+        function closePreview() {
+            const modal = document.getElementById('preview-modal');
+            const body = document.getElementById('modal-body');
+            if (modal) modal.style.display = 'none';
+            if (body) body.innerHTML = '';
+        }
+
+        function closePreviewOnBackdrop(e) {
+            if (e.target.id === 'preview-modal') {
+                closePreview();
+            }
+        }
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closePreview();
+        });
+
+        function sortTable(col) {
+            if (currentSortCol === col) {
+                currentSortAsc = !currentSortAsc;
+            } else {
+                currentSortCol = col;
+                currentSortAsc = true;
+            }
+
+            const tbody = document.querySelector('table tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr.file-row'));
+            if (!rows.length) return;
+
+            rows.sort((a, b) => {
+                const isDirA = parseInt(a.getAttribute('data-is-dir') || '0', 10);
+                const isDirB = parseInt(b.getAttribute('data-is-dir') || '0', 10);
+
+                if (col !== 'ext' && isDirA !== isDirB) {
+                    return isDirB - isDirA;
+                }
+
+                let valA, valB;
+                if (col === 'name') {
+                    valA = (a.getAttribute('data-name') || '').toLowerCase();
+                    valB = (b.getAttribute('data-name') || '').toLowerCase();
+                    return currentSortAsc
+                        ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
+                        : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
+                } else if (col === 'size') {
+                    valA = parseInt(a.getAttribute('data-size') || '0', 10);
+                    valB = parseInt(b.getAttribute('data-size') || '0', 10);
+                    return currentSortAsc ? (valA - valB) : (valB - valA);
+                } else if (col === 'time') {
+                    valA = parseInt(a.getAttribute('data-time') || '0', 10);
+                    valB = parseInt(b.getAttribute('data-time') || '0', 10);
+                    return currentSortAsc ? (valA - valB) : (valB - valA);
+                } else if (col === 'ext') {
+                    if (isDirA !== isDirB) return isDirB - isDirA;
+                    valA = (a.getAttribute('data-ext') || '').toLowerCase();
+                    valB = (b.getAttribute('data-ext') || '').toLowerCase();
+                    return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                }
+                return 0;
+            });
+
+            rows.forEach(r => tbody.appendChild(r));
+
+            document.querySelectorAll('th.sortable').forEach(th => {
+                const indicator = th.querySelector('.sort-indicator');
+                if (th.getAttribute('data-col') === col) {
+                    if (indicator) indicator.textContent = currentSortAsc ? ' 🔼' : ' 🔽';
+                } else {
+                    if (indicator) indicator.textContent = ' ↕';
+                }
+            });
+
+            let visibleIdx = 1;
+            rows.forEach(r => {
+                const indexCell = r.querySelector('.row-index');
+                if (indexCell) indexCell.textContent = visibleIdx++;
             });
         }
 
@@ -655,15 +967,24 @@ function createIndex(rootDir, currentDir = "") {
 // 4. Cac Endpoints API
 
 app.get("/", function (req, res) {
+app.get("/index.html", (req, res) => res.redirect("/"));
+
+app.get("/", async function (req, res) {
     try {
         let dir = sanitizeRelativePath(req.query.dir || "", "") || "";
         if (dir) {
             const target = resolvePathInPublic(dir);
             if (!target || !fs.existsSync(target.absolutePath) || !fs.statSync(target.absolutePath).isDirectory()) {
+            if (!target) return res.redirect("/");
+            try {
+                const stat = await fs.promises.stat(target.absolutePath);
+                if (!stat.isDirectory()) return res.redirect("/");
+            } catch (e) {
                 return res.redirect("/");
             }
         }
         let html = createIndex(publicRoot, dir);
+        let html = await createIndex(publicRoot, dir);
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.send(html);
     } catch (err) {
@@ -673,6 +994,39 @@ app.get("/", function (req, res) {
 });
 
 app.post("/delete-multiple", (req, res) => {
+app.post("/create-folder", async (req, res) => {
+    try {
+        let name = (req.body && req.body.name ? String(req.body.name) : "").trim();
+        let currentDir = sanitizeRelativePath(req.body && req.body.currentDir ? String(req.body.currentDir) : "", "") || "";
+
+        name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim().replace(/[. ]+$/, "");
+        if (!name) {
+            return res.status(400).json({ success: false, message: "Tên thư mục không hợp lệ" });
+        }
+
+        let relPath = currentDir ? `${currentDir}/${name}` : name;
+        const target = resolvePathInPublic(relPath);
+
+        if (!target || isSystemProtectedPath(target.safePath)) {
+            return res.status(400).json({ success: false, message: "Tên thư mục bị cấm hoặc trùng thư mục hệ thống" });
+        }
+
+        try {
+            await fs.promises.access(target.absolutePath);
+            return res.status(400).json({ success: false, message: "Thư mục hoặc file đã tồn tại" });
+        } catch (e) {
+            // Path does not exist, can create
+        }
+
+        await fs.promises.mkdir(target.absolutePath, { recursive: true });
+        res.json({ success: true, path: target.safePath });
+    } catch (err) {
+        console.error("Error in /create-folder:", err);
+        res.status(500).json({ success: false, message: "Lỗi tạo thư mục: " + err.message });
+    }
+});
+
+app.post("/delete-multiple", async (req, res) => {
     try {
         let rawPaths = req.body && req.body.paths;
         if (!Array.isArray(rawPaths)) {
@@ -691,17 +1045,32 @@ app.post("/delete-multiple", (req, res) => {
             const target = resolvePathInPublic(itemPath);
             if (!target || !fs.existsSync(target.absolutePath)) {
                 errors.push({ path: itemPath, error: "Mục không tồn tại" });
+            if (!target) {
+                errors.push({ path: itemPath, error: "Đường dẫn không hợp lệ" });
                 continue;
             }
+
+            try {
+                await fs.promises.access(target.absolutePath);
+            } catch (noAccessErr) {
+                // Item might have already been deleted if parent folder was deleted in same batch
+                continue;
+            }
+
             if (target.absolutePath === publicRoot || isSystemProtectedPath(target.safePath)) {
                 errors.push({ path: itemPath, error: "Không thể xóa file hoặc thư mục hệ thống" });
                 continue;
             }
+
             try {
                 if (fs.statSync(target.absolutePath).isDirectory()) {
                     fs.rmSync(target.absolutePath, { recursive: true, force: true });
+                const stat = await fs.promises.stat(target.absolutePath);
+                if (stat.isDirectory()) {
+                    await fs.promises.rm(target.absolutePath, { recursive: true, force: true });
                 } else {
                     fs.unlinkSync(target.absolutePath);
+                    await fs.promises.unlink(target.absolutePath);
                 }
                 deletedCount++;
             } catch (delErr) {
@@ -736,9 +1105,11 @@ app.post("/upload", (req, res) => {
         });
 
         form.parse(req, function (err, fields, files) {
+        form.parse(req, async function (err, fields, files) {
             if (err) {
                 console.error("Formidable parse error:", err);
                 return res.status(500).json({ success: false, message: "Lỗi xử lý file upload" });
+                return res.status(500).json({ success: false, message: "Lỗi xử lý file upload: " + err.message });
             }
 
             let uploadFiles = [];
@@ -761,19 +1132,27 @@ app.post("/upload", (req, res) => {
             }
 
             let successCount = 0;
+            let errors = [];
+
             for (let index = 0; index < uploadFiles.length; index++) {
                 let file = uploadFiles[index];
                 let originalName = (file.originalFilename || "").trim();
                 let filename = path.basename(originalName);
+                let cleanFilename = path.basename(originalName).replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
                 let oldpath = file.filepath || file.path;
                 if (!filename || !oldpath) continue;
+                if (!cleanFilename || !oldpath) continue;
 
                 let clientRel = sanitizeRelativePath(relativePaths[index] || "", "") || filename;
+                let clientRel = sanitizeRelativePath(relativePaths[index] || "", "") || cleanFilename;
+                clientRel = clientRel.split("/").map(seg => seg.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")).join("/");
                 let relPath = currentDir ? `${currentDir}/${clientRel}` : clientRel;
                 const target = resolvePathInPublic(relPath, filename);
+                const target = resolvePathInPublic(relPath, cleanFilename);
 
                 if (!target || isSystemProtectedPath(target.safePath)) {
                     try { if (fs.existsSync(oldpath)) fs.unlinkSync(oldpath); } catch (e) {}
+                    try { await fs.promises.unlink(oldpath); } catch (e) {}
                     continue;
                 }
 
@@ -781,15 +1160,31 @@ app.post("/upload", (req, res) => {
                 try {
                     fs.mkdirSync(path.dirname(newpath), { recursive: true });
                     fs.copyFileSync(oldpath, newpath);
+                    await fs.promises.mkdir(path.dirname(newpath), { recursive: true });
+                    try {
+                        await fs.promises.rename(oldpath, newpath);
+                    } catch (renameErr) {
+                        if (renameErr.code === "EXDEV") {
+                            await fs.promises.copyFile(oldpath, newpath);
+                            await fs.promises.unlink(oldpath).catch(() => {});
+                        } else {
+                            throw renameErr;
+                        }
+                    }
                     successCount++;
                 } catch (copyErr) {
                     console.error(`Copy file error for ${newpath}:`, copyErr.message);
                 } finally {
                     try { if (fs.existsSync(oldpath)) fs.unlinkSync(oldpath); } catch (e) {}
+                } catch (writeErr) {
+                    console.error(`File write error for ${newpath}:`, writeErr.message);
+                    errors.push({ name: cleanFilename, error: writeErr.message });
+                    try { await fs.promises.unlink(oldpath); } catch (e) {}
                 }
             }
 
             res.json({ success: true, count: successCount });
+            res.json({ success: true, count: successCount, errors });
         });
     } catch (err) {
         console.error("Upload error:", err);
@@ -798,12 +1193,14 @@ app.post("/upload", (req, res) => {
 });
 
 app.get("/getnote/:id", (req, res) => {
+app.get("/getnote/:id", async (req, res) => {
     try {
         let id = req.params.id;
         if (!/^\d+$/.test(id)) {
             return res.status(400).json({ error: "Invalid note ID" });
         }
         let note = getnote(id);
+        let note = await getnote(id);
         res.json({ text: note });
     } catch (err) {
         console.error("Error in /getnote/:id:", err);
@@ -812,6 +1209,7 @@ app.get("/getnote/:id", (req, res) => {
 });
 
 app.post("/note/:id", (req, res) => {
+app.post("/note/:id", async (req, res) => {
     try {
         let id = req.params.id;
         if (!/^\d+$/.test(id)) {
@@ -820,6 +1218,7 @@ app.post("/note/:id", (req, res) => {
         let text = (req.body && req.body.data !== undefined) ? String(req.body.data) : "";
         let noteFilePath = path.join(publicRoot, "note", `note_${id}.txt`);
         fs.writeFileSync(noteFilePath, text, "utf8");
+        await fs.promises.writeFile(noteFilePath, text, "utf8");
         res.send("ok");
     } catch (err) {
         console.error("Note write error:", err);
@@ -828,8 +1227,10 @@ app.post("/note/:id", (req, res) => {
 });
 
 const port = 8082;
+const port = process.env.PORT || 8082;
 app.listen(port, () => {
     console.log(`\nStart server at: ${new Date()}
                 HTTP server is listening at: localhost:${port}
     `);
 });
+
