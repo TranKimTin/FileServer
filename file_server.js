@@ -245,11 +245,14 @@ function createIndex(rootDir, currentDir = "") {
         </div>
 
         <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between;">
+        <div style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #f8f9fa; padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6;">
             <div>Thư mục hiện tại: <b>${escapeHtml(currentPathLabel)}</b></div>
             <div style="display: flex; align-items: center; gap: 12px;">
                 <div>Tổng số: <b>${files.length}</b> mục</div>
                 <span id="selected-info" style="display: none; font-weight: bold; color: #0d6efd;">| Đã chọn: <span id="selected-count">0</span></span>
                 <button type="button" id="btn-delete-selected" class="btn btn-danger" style="display: none;" onclick="deleteSelected()">
+                <span id="selected-info" style="display: none; font-weight: bold; color: #0d6efd; background: #e7f1ff; padding: 4px 10px; border-radius: 4px;">| Đã chọn: <span id="selected-count">0</span></span>
+                <button type="button" id="btn-delete-selected" class="btn btn-danger" style="display: none; font-weight: bold; padding: 6px 14px; box-shadow: 0 2px 4px rgba(220,53,69,0.25);" onclick="deleteSelected()">
                     🗑️ Xóa đã chọn (<span id="btn-delete-count">0</span>)
                 </button>
             </div>
@@ -306,6 +309,13 @@ function createIndex(rootDir, currentDir = "") {
             </div>
             <textarea id="note" oninput="onChangeNote()">${escapeHtml(note)}</textarea>
         </div>
+    </div>
+
+    <div id="floating-delete-bar" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #212529; color: #fff; padding: 10px 22px; border-radius: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.35); z-index: 9998; align-items: center; gap: 16px;">
+        <span style="font-size: 14px;">Đã chọn: <b id="floating-selected-count" style="color: #ffc107; font-size: 16px;">0</b> mục</span>
+        <button type="button" class="btn btn-danger" style="border-radius: 20px; padding: 6px 18px; font-weight: bold;" onclick="deleteSelected()">
+            🗑️ Xóa các mục đã chọn
+        </button>
     </div>
 
     <div id="snackbar">
@@ -455,7 +465,7 @@ function createIndex(rootDir, currentDir = "") {
         function removeVietnameseTones(str) {
             return (str || '')
                 .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[\\u0300-\\u036f]/g, '')
                 .replace(/đ/g, 'd').replace(/Đ/g, 'D')
                 .toLowerCase();
         }
@@ -506,6 +516,8 @@ function createIndex(rootDir, currentDir = "") {
             const selectedCount = document.getElementById('selected-count');
             const btnDelete = document.getElementById('btn-delete-selected');
             const btnDeleteCount = document.getElementById('btn-delete-count');
+            const floatingBar = document.getElementById('floating-delete-bar');
+            const floatingCount = document.getElementById('floating-selected-count');
 
             if (selectedInfo) selectedInfo.style.display = count > 0 ? 'inline' : 'none';
             if (selectedCount) selectedCount.textContent = count;
@@ -514,6 +526,8 @@ function createIndex(rootDir, currentDir = "") {
                 btnDelete.disabled = false;
             }
             if (btnDeleteCount) btnDeleteCount.textContent = count;
+            if (floatingBar) floatingBar.style.display = count > 0 ? 'flex' : 'none';
+            if (floatingCount) floatingCount.textContent = count;
 
             document.querySelectorAll('tr.file-row').forEach(row => {
                 const cb = row.querySelector('.row-checkbox');
@@ -541,6 +555,7 @@ function createIndex(rootDir, currentDir = "") {
             if (!confirm('Bạn có chắc chắn muốn xóa: "' + filename + '"?')) return;
             executeDelete([filename]);
         }
+        window.Delete = deleteSingle;
 
         function deleteSelected() {
             const items = getSelectedItems();
@@ -550,8 +565,8 @@ function createIndex(rootDir, currentDir = "") {
             }
             const hiddenCount = items.filter(i => i.isHidden).length;
             let msg = 'Bạn có chắc muốn xóa ' + items.length + ' mục đã chọn không?';
-            if (hiddenCount > 0) msg += '\n(Lưu ý: Có ' + hiddenCount + ' mục đang bị ẩn bởi bộ lọc tìm kiếm)';
-            msg += '\n\nThao tác này không thể hoàn tác!';
+            if (hiddenCount > 0) msg += '\\n(Lưu ý: Có ' + hiddenCount + ' mục đang bị ẩn bởi bộ lọc tìm kiếm)';
+            msg += '\\n\\nThao tác này không thể hoàn tác!';
             if (!confirm(msg)) return;
 
             executeDelete(items.map(i => i.path));
@@ -571,8 +586,8 @@ function createIndex(rootDir, currentDir = "") {
             .then(data => {
                 if (data.success) {
                     if (data.errors && data.errors.length > 0) {
-                        const errMsg = 'Đã xóa ' + data.count + ' mục.\nMột số mục không thể xóa:\n' +
-                            data.errors.map(e => '- ' + e.path + ': ' + e.error).join('\n');
+                        const errMsg = 'Đã xóa ' + data.count + ' mục.\\nMột số mục không thể xóa:\\n' +
+                            data.errors.map(e => '- ' + e.path + ': ' + e.error).join('\\n');
                         alert(errMsg);
                     } else {
                         toast('Đã xóa thành công ' + data.count + ' mục', 600);
@@ -613,7 +628,7 @@ function createIndex(rootDir, currentDir = "") {
         }
 
         function getNotes(id) {
-            if (!/^\d+$/.test(id)) {
+            if (!/^\\d+$/.test(id)) {
                 id = 1;
                 document.getElementById('notes').value = id;
             }

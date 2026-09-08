@@ -309,6 +309,13 @@
     </div>
     <textarea id='note' onchange='onChangeNote()' onkeyup='onChangeNote()'>https://www.hackerrank.com/contests/spct2024batch-3-pretest-4/challenges/100000-tons-of-gold/problem</textarea>
     
+    <div id="floating-delete-bar" style="display: none; position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: #212529; color: #fff; padding: 10px 22px; border-radius: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.35); z-index: 9998; align-items: center; gap: 16px;">
+        <span style="font-size: 14px;">Đã chọn: <b id="floating-selected-count" style="color: #ffc107; font-size: 16px;">0</b> mục</span>
+        <button type="button" class="btn-danger" style="border-radius: 20px; padding: 6px 18px; font-weight: bold; cursor: pointer;" onclick="deleteSelected()">
+            🗑️ Xóa các mục đã chọn
+        </button>
+    </div>
+
     <div id="snackbar">
         <span id="snackbar-msg"></span>
         <div id="snackbar-loader" class="loader" style="display: none;"></div>
@@ -489,6 +496,8 @@
             let selectedCount = document.getElementById('selected-count');
             let btnDelete = document.getElementById('btn-delete-selected');
             let btnDeleteCount = document.getElementById('btn-delete-count');
+            let floatingBar = document.getElementById('floating-delete-bar');
+            let floatingCount = document.getElementById('floating-selected-count');
 
             if (selectedInfo) selectedInfo.style.display = count > 0 ? 'inline' : 'none';
             if (selectedCount) selectedCount.innerText = count;
@@ -497,6 +506,8 @@
                 btnDelete.disabled = false;
             }
             if (btnDeleteCount) btnDeleteCount.innerText = count;
+            if (floatingBar) floatingBar.style.display = count > 0 ? 'flex' : 'none';
+            if (floatingCount) floatingCount.innerText = count;
 
             document.querySelectorAll('tr.file-row').forEach(row => {
                 let cb = row.querySelector('.row-checkbox');
@@ -598,6 +609,7 @@
                 toast('Lỗi kết nối máy chủ', 2000);
             });
         }
+        window.deleteSingle = Delete;
 
         function copy(text) {
             text = encodeURI(text);
